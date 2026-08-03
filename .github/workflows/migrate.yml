@@ -1,0 +1,63 @@
+name: Migrate
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/db/migrations/**"
+      - "packages/db/src/schema/**"
+
+concurrency:
+  group: migrate-${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  check-destructive:
+    name: check for unreviewed destructive migrations
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check destructive migrations have a contract file
+        run: pnpm --filter @pulse/db check:destructive-migrations
+
+  migrate:
+    name: apply migrations (production)
+    needs: check-destructive
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Invariant: migrations run from GitHub Actions, never a Vercel build
+      # step. This is the only place DATABASE_URL is used to write schema.
+      - name: Apply migrations
+        run: pnpm --filter @pulse/db db:migrate
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
