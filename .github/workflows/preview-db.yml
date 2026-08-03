@@ -1,0 +1,158 @@
+name: Preview DB (Neon branch per PR)
+
+# Gives every PR its own disposable Neon branch, seeded with fixture data, and
+# points that PR's Vercel Preview deployments at it — so reviewing a PR never
+# reads or writes the shared `staging`/production data. See "Environments" in
+# README.md.
+
+on:
+  pull_request:
+    types: [opened, reopened, closed]
+
+concurrency:
+  group: preview-db-pr-${{ github.event.number }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  create:
+    if: github.event.action == 'opened' || github.event.action == 'reopened'
+    name: create Neon branch + seed + wire Vercel preview
+    runs-on: ubuntu-latest
+    environment: preview
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Branch from `main` (the Neon branch migrate.yml keeps current on every
+      # push to the git `main` branch), not from `develop`/`staging` — PR
+      # previews should start from the same schema+data baseline production
+      # does, not from whatever staging happens to look like mid-reset.
+      - name: Create Neon branch
+        id: create-branch
+        uses: neondatabase/create-branch-action@v5
+        with:
+          project_id: ${{ secrets.NEON_PROJECT_ID }}
+          parent: main
+          branch_name: preview/pr-${{ github.event.number }}
+          api_key: ${{ secrets.NEON_API_KEY }}
+
+      - name: Apply migrations to preview branch
+        run: pnpm --filter @pulse/db db:migrate
+        env:
+          DATABASE_URL: ${{ steps.create-branch.outputs.db_url_pooled }}
+
+      - name: Seed preview branch
+        run: pnpm --filter @pulse/db db:seed
+        env:
+          DATABASE_URL: ${{ steps.create-branch.outputs.db_url_pooled }}
+
+      # Vercel scopes an env var to a specific PR's Preview deployments via
+      # `target: ["preview"]` + `gitBranch: <head ref>` — this is the same
+      # mechanism Vercel's own dashboard uses for "Preview" env vars pinned to
+      # one branch. Upsert (not just create) so `reopened` re-points the var
+      # at a freshly created branch's connection string.
+      - name: Point pulse-web + pulse-console preview deployments at the branch
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_TEAM_ID: ${{ secrets.VERCEL_ORG_ID }}
+          DATABASE_URL: ${{ steps.create-branch.outputs.db_url_pooled }}
+          GIT_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          upsert_env() {
+            local project_id="$1"
+            local existing_id
+            existing_id=$(curl -sS -H "Authorization: Bearer $VERCEL_TOKEN" \
+              "https://api.vercel.com/v9/projects/$project_id/env?teamId=$VERCEL_TEAM_ID" \
+              | jq -r --arg branch "$GIT_BRANCH" \
+                '.envs[] | select(.key == "DATABASE_URL" and .gitBranch == $branch) | .id' | head -n1)
+
+            if [ -n "$existing_id" ]; then
+              curl -sS -X PATCH -H "Authorization: Bearer $VERCEL_TOKEN" -H "Content-Type: application/json" \
+                "https://api.vercel.com/v9/projects/$project_id/env/$existing_id?teamId=$VERCEL_TEAM_ID" \
+                -d "$(jq -n --arg v "$DATABASE_URL" '{value: $v}')" > /dev/null
+            else
+              curl -sS -X POST -H "Authorization: Bearer $VERCEL_TOKEN" -H "Content-Type: application/json" \
+                "https://api.vercel.com/v10/projects/$project_id/env?teamId=$VERCEL_TEAM_ID" \
+                -d "$(jq -n --arg v "$DATABASE_URL" --arg branch "$GIT_BRANCH" \
+                  '{key: "DATABASE_URL", value: $v, type: "encrypted", target: ["preview"], gitBranch: $branch}')" > /dev/null
+            fi
+          }
+
+          upsert_env "${{ secrets.VERCEL_PROJECT_ID_WEB }}"
+          upsert_env "${{ secrets.VERCEL_PROJECT_ID_CONSOLE }}"
+
+      - name: Comment branch name on the PR
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.number }}
+          comment-tag: preview-db
+          body: |
+            🔀 Neon preview branch: `preview/pr-${{ github.event.number }}`
+
+            Seeded from `main` and wired to this PR's Vercel Preview deployments
+            for `pulse-web` and `pulse-console` (scoped to branch `${{ github.event.pull_request.head.ref }}`).
+            Deleted automatically when this PR closes.
+
+  delete:
+    if: github.event.action == 'closed'
+    name: delete Neon branch + unwire Vercel preview
+    runs-on: ubuntu-latest
+    environment: preview
+    steps:
+      - name: Delete Neon branch
+        uses: neondatabase/delete-branch-action@v3
+        with:
+          project_id: ${{ secrets.NEON_PROJECT_ID }}
+          branch: preview/pr-${{ github.event.number }}
+          api_key: ${{ secrets.NEON_API_KEY }}
+
+      # Otherwise a re-opened-then-closed-then-reopened PR's stale preview env
+      # var would point at a deleted branch and every preview deployment
+      # would fail to connect.
+      - name: Remove the PR's Vercel env var overrides
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_TEAM_ID: ${{ secrets.VERCEL_ORG_ID }}
+          GIT_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          remove_env() {
+            local project_id="$1"
+            local existing_id
+            existing_id=$(curl -sS -H "Authorization: Bearer $VERCEL_TOKEN" \
+              "https://api.vercel.com/v9/projects/$project_id/env?teamId=$VERCEL_TEAM_ID" \
+              | jq -r --arg branch "$GIT_BRANCH" \
+                '.envs[] | select(.key == "DATABASE_URL" and .gitBranch == $branch) | .id' | head -n1)
+            if [ -n "$existing_id" ]; then
+              curl -sS -X DELETE -H "Authorization: Bearer $VERCEL_TOKEN" \
+                "https://api.vercel.com/v9/projects/$project_id/env/$existing_id?teamId=$VERCEL_TEAM_ID" > /dev/null
+            fi
+          }
+
+          remove_env "${{ secrets.VERCEL_PROJECT_ID_WEB }}"
+          remove_env "${{ secrets.VERCEL_PROJECT_ID_CONSOLE }}"
+
+      - name: Comment that the branch was deleted
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.number }}
+          comment-tag: preview-db
+          body: |
+            🔀 Neon preview branch `preview/pr-${{ github.event.number }}` deleted (PR closed).

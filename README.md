@@ -66,6 +66,55 @@ Migrations run exclusively from a GitHub Actions workflow, never from a
 Vercel build step. See `packages/db` once schema work lands. Expand/contract
 only — destructive schema changes require a two-PR sequence.
 
+## Environments
+
+Three environments, each with its own Neon branch and its own path to a
+Vercel deployment:
+
+| Environment    | Git trigger                              | Vercel deployment                                                                 | Database                                       |
+| -------------- | ----------------------------------------- | ---------------------------------------------------------------------------------- | ----------------------------------------------- |
+| **Production** | push to `main` (migrations only)          | Vercel's own git integration, Production Branch = `develop` (both projects)        | Neon default/production branch                  |
+| **Staging**    | push to `develop`                         | `.github/workflows/staging-deploy.yml` — CLI-built Preview deployment aliased to a dedicated staging domain, independent of the production deployment `develop` also triggers | Neon `staging` branch, reset nightly from a production snapshot (`staging-reset.yml`) |
+| **Preview**    | PR opened/reopened against `develop`      | Vercel's own git integration (normal Preview deployment for the PR's branch)        | Neon `preview/pr-<number>` branch, created off `main` per PR (`preview-db.yml`) |
+
+Notes:
+
+- `develop` is intentionally both: the branch Vercel treats as Production
+  (unchanged, existing setup — see below) *and* the branch that
+  `staging-deploy.yml` also builds independently for a preproduction smoke
+  surface. These are two separate deployments of the same commit; the
+  staging one never touches the production domain or the production DB.
+- Migrations (`migrate.yml`) apply to the Neon production branch on push to
+  the git `main` branch — not `develop`. `main` exists in this repo purely as
+  the migration trigger / PR base for schema changes; `develop` is where
+  day-to-day feature work merges. `preview-db.yml` branches PR databases off
+  Neon `main`/production (not `staging`) so every PR starts from the same
+  baseline production does.
+- `staging-reset.yml` runs nightly and uses Neon's "reset from parent" API,
+  which recreates `staging`'s storage (schema + data) from production's
+  current head — no separate seed or migrate step needed after a reset.
+- `preview-db.yml` deletes its Neon branch and the Vercel env var override
+  scoped to that PR's branch when the PR closes.
+
+### Required secrets / vars
+
+| Name                              | Where                          | Purpose                                                        |
+| ----------------------------------| --------------------------------| ----------------------------------------------------------------|
+| `NEON_API_KEY`                    | repo secret                     | Create/delete/reset Neon branches                               |
+| `NEON_PROJECT_ID`                 | repo secret                     | Neon project containing `main`/production and `staging` branches |
+| `VERCEL_TOKEN`                    | repo secret                     | Vercel CLI/API auth                                             |
+| `VERCEL_ORG_ID`                   | repo secret                     | Vercel team id                                                  |
+| `VERCEL_PROJECT_ID_WEB`           | repo secret                     | `pulse-web` Vercel project id                                   |
+| `VERCEL_PROJECT_ID_CONSOLE`       | repo secret                     | `pulse-console` Vercel project id                                |
+| `STAGING_WEB_ALIAS`               | repo/environment variable       | Domain aliased to `pulse-web`'s staging deployment               |
+| `STAGING_CONSOLE_ALIAS`           | repo/environment variable       | Domain aliased to `pulse-console`'s staging deployment           |
+
+`pulse-web` / `pulse-console` Vercel projects also need a `DATABASE_URL`
+Preview env var scoped to `gitBranch: develop` (Project → Settings →
+Environment Variables → Preview, "Branch" override) pointing at the Neon
+`staging` connection string — that's what `staging-deploy.yml`'s
+`vercel pull --git-branch=develop` picks up.
+
 ## Environment variables
 
 `packages/db` parses `DATABASE_URL`, `UPSTASH_REDIS_REST_URL`, and

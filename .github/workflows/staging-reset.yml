@@ -1,0 +1,42 @@
+name: Staging DB nightly reset
+
+# Resets the Neon `staging` branch from a current production snapshot every
+# night, so the staging deployment (see staging-deploy.yml) exercises
+# realistic data without staging drifting into its own permanent fork or
+# ever being the system of record for anything.
+on:
+  schedule:
+    # 16:00 UTC = 02:00/03:00 Sydney depending on DST. Compute is cheap and
+    # idle overnight, so exact timing isn't sensitive.
+    - cron: "0 16 * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: staging-reset
+  cancel-in-progress: false
+
+jobs:
+  reset:
+    name: reset Neon staging branch from production
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Reset staging branch from production
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+        run: |
+          set -euo pipefail
+          npx --yes neonctl@latest branches reset staging \
+            --project-id "${{ secrets.NEON_PROJECT_ID }}" \
+            --parent \
+            --api-key "$NEON_API_KEY"
+
+      # `branches reset --parent` recreates staging's storage from the
+      # parent (production) branch's current head, schema included — so no
+      # separate migrate step is needed. It does NOT re-run seed.ts;
+      # production data is real curator data, which is what staging is for.
+      - name: Verify staging is reachable post-reset
+        run: |
+          npx --yes neonctl@latest branches get staging \
+            --project-id "${{ secrets.NEON_PROJECT_ID }}" \
+            --api-key "${{ secrets.NEON_API_KEY }}"

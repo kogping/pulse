@@ -1,0 +1,82 @@
+name: Staging deploy (develop -> preproduction alias)
+
+# `develop` is Vercel's configured Production Branch for both projects (see
+# README "Environments") — its git-integration deployment already goes live
+# at the production URLs, and this workflow does not touch that.
+#
+# This job adds a SECOND, independent deployment of the same commit: a
+# Vercel CLI-driven Preview build, aliased to a dedicated staging domain and
+# pointed at the Neon `staging` branch instead of production. It exists so
+# there's a preproduction surface to smoke-test against Neon `staging` data
+# without affecting the real production deployment or its database.
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch: {}
+
+concurrency:
+  group: staging-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: build + alias staging (${{ matrix.project }})
+    runs-on: ubuntu-latest
+    environment: staging
+    strategy:
+      matrix:
+        project: [web, console]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      # `--git-branch develop` pulls the Preview env vars scoped to `develop`
+      # specifically (see the "staging" environment's Vercel project
+      # settings) — this is how NEON_STAGING DATABASE_URL gets into the
+      # build instead of production's.
+      - name: Pull Vercel project settings + env
+        working-directory: apps/${{ matrix.project }}
+        run: vercel pull --yes --environment=preview --git-branch=develop --token="$VERCEL_TOKEN"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ matrix.project == 'web' && secrets.VERCEL_PROJECT_ID_WEB || secrets.VERCEL_PROJECT_ID_CONSOLE }}
+
+      - name: Build (non-production)
+        working-directory: apps/${{ matrix.project }}
+        run: vercel build --token="$VERCEL_TOKEN"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ matrix.project == 'web' && secrets.VERCEL_PROJECT_ID_WEB || secrets.VERCEL_PROJECT_ID_CONSOLE }}
+
+      - name: Deploy prebuilt (non-production)
+        id: deploy
+        working-directory: apps/${{ matrix.project }}
+        run: echo "url=$(vercel deploy --prebuilt --token="$VERCEL_TOKEN")" >> "$GITHUB_OUTPUT"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ matrix.project == 'web' && secrets.VERCEL_PROJECT_ID_WEB || secrets.VERCEL_PROJECT_ID_CONSOLE }}
+
+      - name: Alias to the staging domain
+        working-directory: apps/${{ matrix.project }}
+        run: |
+          alias_domain="${{ matrix.project == 'web' && vars.STAGING_WEB_ALIAS || vars.STAGING_CONSOLE_ALIAS }}"
+          vercel alias set "${{ steps.deploy.outputs.url }}" "$alias_domain" --token="$VERCEL_TOKEN"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ matrix.project == 'web' && secrets.VERCEL_PROJECT_ID_WEB || secrets.VERCEL_PROJECT_ID_CONSOLE }}
