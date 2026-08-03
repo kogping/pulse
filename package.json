@@ -10,10 +10,12 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "dev": "turbo run dev"
+    "dev": "turbo run dev",
+    "latency:smoke": "tsx scripts/latency-smoke.ts"
   },
   "devDependencies": {
     "turbo": "^2.3.0",
+    "tsx": "^4.23.5",
     "typescript": "^5.7.0"
   }
 }

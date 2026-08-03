@@ -54,3 +54,29 @@ typecheck → lint → test → build, single job, fail fast.
 Migrations run exclusively from a GitHub Actions workflow, never from a
 Vercel build step. See `packages/db` once schema work lands. Expand/contract
 only — destructive schema changes require a two-PR sequence.
+
+## Environment variables
+
+`packages/db` parses `DATABASE_URL`, `UPSTASH_REDIS_REST_URL`, and
+`UPSTASH_REDIS_REST_TOKEN` with zod at import time — a missing or malformed
+var throws immediately rather than failing on first query. See
+[docs/infra/provisioning.md](docs/infra/provisioning.md) for exact Neon
+(ap-southeast-2, PostGIS) and Upstash Redis (ap-southeast-2) setup steps.
+These three vars must also be declared in `turbo.json`'s `globalEnv` (already
+done) or `turbo run build`/`dev` will silently strip them from the task's
+environment.
+
+## Sydney latency baseline
+
+`apps/web` exposes `GET /api/_latency` (`apps/web/app/api/%5Flatency/route.ts`
+— the `%5F` folder name is Next.js's escape for a literal leading underscore
+in a route segment), which times a Neon `SELECT 1` and an Upstash `GET` in
+`syd1` and returns `{ region, dbMs, redisMs, totalMs }`.
+
+```bash
+pnpm latency:smoke https://<deployed-web-url>
+```
+
+Hits that endpoint 50 times, prints p50/p75/p95 round trip, and writes
+`docs/baselines/latency-YYYY-MM-DD.md`. Exits non-zero if the reported region
+isn't `syd1` or p75 exceeds 250ms.
