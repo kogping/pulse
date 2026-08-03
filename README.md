@@ -25,6 +25,11 @@ determines which app it builds:
 | `pulse-web`        | `apps/web`         | public PWA                          |
 | `pulse-console`     | `apps/console`      | curator console (Auth.js, allow-list) |
 
+Production URLs (Production Branch = `develop`):
+
+- `pulse-web`: https://pulse-web-clbh-three.vercel.app
+- `pulse-console`: https://pulse-console1.vercel.app
+
 Both projects build via Turborepo's dependency graph, so a Vercel build for
 either app picks up `packages/db`, `packages/ui`, and `packages/config`
 automatically (`turbo` walks `^build` before building the app itself).
@@ -46,8 +51,14 @@ pnpm build
 
 ## CI
 
-`.github/workflows/ci.yml` runs on every pull request: cached install →
-typecheck → lint → test → build, single job, fail fast.
+`.github/workflows/ci.yml` has two jobs:
+
+- `ci` — runs on every pull request: cached install → typecheck → lint → test
+  → build, fail fast.
+- `latency-baseline` — runs on every push to `develop` (i.e. after a PR
+  merges), after `ci` passes. Hits the live `pulse-web` production URL (see
+  [Sydney latency baseline](#sydney-latency-baseline)) and fails the job if
+  the region isn't `syd1` or p75 exceeds the budget.
 
 ## Migrations
 
@@ -74,9 +85,13 @@ in a route segment), which times a Neon `SELECT 1` and an Upstash `GET` in
 `syd1` and returns `{ region, dbMs, redisMs, totalMs }`.
 
 ```bash
-pnpm latency:smoke https://<deployed-web-url>
+pnpm latency:smoke https://pulse-web-clbh-three.vercel.app
 ```
 
 Hits that endpoint 50 times, prints p50/p75/p95 round trip, and writes
 `docs/baselines/latency-YYYY-MM-DD.md`. Exits non-zero if the reported region
 isn't `syd1` or p75 exceeds 250ms.
+
+`.github/workflows/ci.yml` runs this automatically as the `latency-baseline`
+job on every push to `develop`, against the `PULSE_WEB_URL` repo variable
+(currently the URL above).
