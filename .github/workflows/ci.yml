@@ -2,6 +2,8 @@ name: CI
 
 on:
   pull_request:
+  push:
+    branches: [develop]
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -48,3 +50,27 @@ jobs:
           DATABASE_URL: "postgresql://ci:ci@ci.invalid/ci"
           UPSTASH_REDIS_REST_URL: "https://ci.invalid"
           UPSTASH_REDIS_REST_TOKEN: "ci-placeholder"
+
+  latency-baseline:
+    name: verify syd1 latency baseline (pulse-web production)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    needs: ci
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Latency smoke test
+        run: pnpm latency:smoke "${{ vars.PULSE_WEB_URL }}"
