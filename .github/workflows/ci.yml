@@ -38,3 +38,13 @@ jobs:
 
       - name: Build
         run: pnpm build
+        env:
+          # Placeholders only. packages/db/src/env.ts validates shape at
+          # import time (invariant: throws at boot on a missing var), and
+          # `next build` imports every route module during page-data
+          # collection — but nothing here executes a real query. Real
+          # values live in Neon/Upstash and are injected by Vercel at
+          # runtime for actual deployments; see docs/infra/provisioning.md.
+          DATABASE_URL: "postgresql://ci:ci@ci.invalid/ci"
+          UPSTASH_REDIS_REST_URL: "https://ci.invalid"
+          UPSTASH_REDIS_REST_TOKEN: "ci-placeholder"

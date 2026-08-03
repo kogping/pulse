@@ -1,3 +1,6 @@
-// Placeholder entry point. Schema, migrations, queries, and freshness logic
-// land here in a later task — intentionally empty for the skeleton.
 export const PACKAGE_NAME = "@pulse/db";
+
+export { env } from "./env";
+export type { Env } from "./env";
+export { db, sql } from "./client";
+export { redis } from "./redis";
