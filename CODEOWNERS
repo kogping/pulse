@@ -1,0 +1,7 @@
+# Default owners for everything in the repo, unless a later match takes precedence.
+# Replace with real GitHub usernames/teams before enabling branch protection.
+* @kogping
+
+/apps/web/      @kogping
+/apps/console/  @kogping
+/packages/db/   @kogping

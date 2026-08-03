@@ -1,0 +1,26 @@
+{
+  "name": "@pulse/config",
+  "version": "0.0.0",
+  "private": true,
+  "main": "./index.js",
+  "files": [
+    "base.json",
+    "nextjs.json",
+    "eslint-preset.js",
+    "tailwind-preset.js"
+  ],
+  "scripts": {
+    "build": "echo \"@pulse/config: no build step (presets only)\"",
+    "lint": "echo \"@pulse/config: nothing to lint\"",
+    "typecheck": "echo \"@pulse/config: nothing to typecheck\"",
+    "test": "echo \"@pulse/config: no tests\""
+  },
+  "dependencies": {
+    "@eslint/js": "^9.17.0",
+    "eslint": "^9.17.0",
+    "typescript-eslint": "^8.18.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}
