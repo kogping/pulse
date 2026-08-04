@@ -1,5 +1,6 @@
 import { index, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { geographyPoint } from "./columns";
+import { curators } from "./curators";
 
 export const venues = pgTable(
   "venues",
@@ -21,6 +22,10 @@ export const venues = pgTable(
     // (packages/db/src/venue-input.ts) for any venue saved through the form.
     qualityTier: text("quality_tier"),
     curatorPitch: text("curator_pitch"),
+    // Attribution only — nullable because pre-existing rows predate this
+    // column. Set once at creation, never reassigned on edit (contribution
+    // counting attributes edits separately, via verification_events).
+    createdBy: uuid("created_by").references(() => curators.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

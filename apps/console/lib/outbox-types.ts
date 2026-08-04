@@ -35,7 +35,12 @@ export interface OutboxAction {
   notBefore: number;
 }
 
-export type OutboxActionResultStatus = "applied" | "duplicate" | "rejected";
+// 'pending_review' is terminal from the client's point of view (see
+// outbox-policy.ts) but distinct from 'applied': the curator had a declared
+// conflict of interest in the venue, so the correction was parked in
+// pending_edits for a second curator to approve rather than written
+// straight to venue_attributes.
+export type OutboxActionResultStatus = "applied" | "duplicate" | "rejected" | "pending_review";
 
 export interface OutboxActionResult {
   id: string;

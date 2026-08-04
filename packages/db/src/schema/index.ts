@@ -8,3 +8,5 @@ export * from "./correction-flags";
 export * from "./transit-hubs";
 export * from "./venue-hub-links";
 export * from "./scheduled-departures";
+export * from "./curator-venue-interests";
+export * from "./pending-edits";

@@ -26,3 +26,12 @@ export {
   venueInputSchema,
 } from "./venue-input";
 export type { QualityTier, VenueAttributeFieldInput, VenueHoursRowInput, VenueInput } from "./venue-input";
+export {
+  applyOrDeferEdit,
+  declareInterest,
+  decidePendingEdit,
+  hasDeclaredInterest,
+  listPendingEdits,
+} from "./coi";
+export type { DecidePendingEditResult, EditRequest, PendingEditRecord } from "./coi";
+export { resolvePublicAttribute } from "./public-attributes";

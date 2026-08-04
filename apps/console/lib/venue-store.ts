@@ -90,6 +90,7 @@ function createDrizzleVenueStore(): VenueStore {
           address: input.address ?? null,
           qualityTier: input.qualityTier,
           curatorPitch: input.curatorPitch,
+          createdBy: curatorId,
           location: sql`ST_SetSRID(ST_MakePoint(${input.location.lng}, ${input.location.lat}), 4326)::geography`,
         }),
       ];
