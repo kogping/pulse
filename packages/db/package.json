@@ -14,7 +14,8 @@
     "db:migrate": "tsx scripts/migrate.ts",
     "db:generate-freshness-sql": "tsx scripts/generate-freshness-sql.ts",
     "db:seed": "tsx scripts/seed.ts",
-    "check:destructive-migrations": "tsx scripts/check-destructive-migrations.ts"
+    "check:destructive-migrations": "tsx scripts/check-destructive-migrations.ts",
+    "check:no-direct-attribute-import": "tsx scripts/check-no-direct-attribute-import.ts"
   },
   "devDependencies": {
     "@pulse/config": "workspace:*",

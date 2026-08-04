@@ -36,6 +36,15 @@ export {
 export type { DecidePendingEditResult, EditRequest, PendingEditRecord } from "./coi";
 export { resolvePublicAttribute } from "./public-attributes";
 export {
+  attributeViewSchema,
+  assertValidAttributeViews,
+  buildAttributeView,
+  buildVenueCard,
+  getFeedVenues,
+  getVenueForCard,
+} from "./provenance";
+export type { AttributeValue, AttributeView, AttributeViewRow, GetFeedVenuesParams, VenueCardData } from "./provenance";
+export {
   listPendingAuditSamples,
   pickWeightedSample,
   recordAuditVerdict,
