@@ -1,4 +1,5 @@
 export * from "./curators";
+export * from "./auth";
 export * from "./venues";
 export * from "./venue-hours";
 export * from "./venue-attributes";
