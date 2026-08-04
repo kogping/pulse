@@ -1,4 +1,4 @@
-import type { VenueCardData } from "@pulse/db";
+import type { IntentFilterId, VenueCardData } from "@pulse/db";
 import { geohashEncode, haversineDistanceMeters } from "./geohash";
 
 // Redis feed cache (CLAUDE.md: "Redis feed cache in Upstash").
@@ -41,6 +41,7 @@ export type FetchFeedVenues = (params: {
   radiusMeters?: number;
   limit?: number;
   now?: Date;
+  filters?: IntentFilterId[];
 }) => Promise<FeedCacheVenue[]>;
 
 export interface FeedCacheParams {
@@ -50,6 +51,7 @@ export interface FeedCacheParams {
   radiusMeters?: number;
   limit?: number;
   now?: Date;
+  filters?: IntentFilterId[];
 }
 
 export interface FeedCacheLogger {
@@ -89,8 +91,11 @@ function feedCacheBucket(now: Date): number {
 
 // Small deterministic non-cryptographic hash (djb2-style) — this only needs
 // to distinguish filter combinations inside a cache key, not resist attack.
-function feedCacheFilterHash(filters: { radiusMeters: number; limit: number }): string {
-  const input = `${filters.radiusMeters}:${filters.limit}`;
+// Intent filter ids are sorted before hashing so ?filters=a,b and
+// ?filters=b,a share a cache entry rather than needlessly missing each
+// other — order never affects the AND-composed result.
+function feedCacheFilterHash(filters: { radiusMeters: number; limit: number; intentFilters: IntentFilterId[] }): string {
+  const input = `${filters.radiusMeters}:${filters.limit}:${[...filters.intentFilters].sort().join(",")}`;
   let hash = 0;
   for (let i = 0; i < input.length; i++) hash = (hash * 31 + input.charCodeAt(i)) | 0;
   return (hash >>> 0).toString(36);
@@ -114,7 +119,7 @@ function sortByExactDistance(entries: FeedCacheVenue[], origin: { lat: number; l
 // CLAUDE.md. `deps.fetchVenues` is the only path that ever hits Postgres;
 // everything above it is cache bookkeeping around that one call.
 export async function getFeedWithCache(params: FeedCacheParams, deps: FeedCacheDeps): Promise<FeedCacheResult> {
-  const { precinct, lat, lng, radiusMeters = 2000, limit = 10 } = params;
+  const { precinct, lat, lng, radiusMeters = 2000, limit = 10, filters = [] } = params;
   const now = params.now ?? new Date();
   const logger = deps.logger ?? consoleLogger;
   const recordMetric = deps.recordMetric ?? (() => {});
@@ -130,13 +135,13 @@ export async function getFeedWithCache(params: FeedCacheParams, deps: FeedCacheD
 
   if (version === null) {
     recordMetric("degraded");
-    const fresh = await deps.fetchVenues({ precinct, lat, lng, radiusMeters, limit, now });
+    const fresh = await deps.fetchVenues({ precinct, lat, lng, radiusMeters, limit, now, filters });
     return { venues: sortByExactDistance(fresh, origin, limit), cacheHit: false, degraded: true };
   }
 
   const geohash5 = geohashEncode(lat, lng, FEED_CACHE_GEOHASH_PRECISION);
   const bucket = feedCacheBucket(now);
-  const filterHash = feedCacheFilterHash({ radiusMeters, limit });
+  const filterHash = feedCacheFilterHash({ radiusMeters, limit, intentFilters: filters });
   const key = buildFeedCacheKey({ precinct, geohash5, bucket, filterHash, version });
 
   let cached: FeedCacheVenue[] | null = null;
@@ -152,7 +157,7 @@ export async function getFeedWithCache(params: FeedCacheParams, deps: FeedCacheD
   }
 
   recordMetric("miss");
-  const fresh = await deps.fetchVenues({ precinct, lat, lng, radiusMeters, limit, now });
+  const fresh = await deps.fetchVenues({ precinct, lat, lng, radiusMeters, limit, now, filters });
   try {
     await deps.redis.set(key, fresh, { ex: FEED_CACHE_TTL_SECONDS });
   } catch (error) {

@@ -100,6 +100,9 @@ importers:
       '@pulse/analytics':
         specifier: workspace:*
         version: link:../../packages/analytics
+      '@pulse/config':
+        specifier: workspace:*
+        version: link:../../packages/config
       '@pulse/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -125,9 +128,6 @@ importers:
       '@playwright/test':
         specifier: ^1.62.1
         version: 1.62.1
-      '@pulse/config':
-        specifier: workspace:*
-        version: link:../../packages/config
       '@types/node':
         specifier: ^22.10.0
         version: 22.20.1

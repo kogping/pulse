@@ -13,4 +13,12 @@ describe("FilterChip", () => {
     const html = renderToStaticMarkup(<FilterChip label="Live music" selected={false} onClick={() => {}} />);
     expect(html).toContain('aria-pressed="false"');
   });
+
+  it("renders as a link, not a button, when href is given", () => {
+    const html = renderToStaticMarkup(<FilterChip label="Live music" selected href="/?filters=live_music" />);
+    expect(html).toContain("<a ");
+    expect(html).not.toContain("<button");
+    expect(html).toContain('href="/?filters=live_music"');
+    expect(html).toContain('aria-pressed="true"');
+  });
 });

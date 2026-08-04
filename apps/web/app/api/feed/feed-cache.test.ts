@@ -128,4 +128,28 @@ describe("feed cache", () => {
     expect(resultA.venues.map((v) => v.id)).toEqual(["near-a", "near-b"]);
     expect(resultB.venues.map((v) => v.id)).toEqual(["near-b", "near-a"]);
   });
+
+  it("does not collide two different intent filter sets on the same cache key", async () => {
+    const redis = new FakeRedis();
+    let call = 0;
+    const fetchVenues: FetchFeedVenues = vi.fn(async () => {
+      call++;
+      return call === 1
+        ? [{ venue: venue("live-music-venue"), lat: -33.88, lng: 151.2 }]
+        : [{ venue: venue("outdoor-venue"), lat: -33.88, lng: 151.2 }];
+    });
+    const now = new Date("2026-08-05T22:00:00+10:00");
+    const base = { precinct: PRECINCT, lat: -33.88, lng: 151.2, now };
+
+    const liveMusic = await getFeedWithCache({ ...base, filters: ["live_music"] }, { redis, fetchVenues });
+    const outdoor = await getFeedWithCache({ ...base, filters: ["outdoor"] }, { redis, fetchVenues });
+    // Same filter set requested again should still hit its own cache entry.
+    const liveMusicAgain = await getFeedWithCache({ ...base, filters: ["live_music"] }, { redis, fetchVenues });
+
+    expect(fetchVenues).toHaveBeenCalledTimes(2);
+    expect(liveMusic.venues.map((v) => v.id)).toEqual(["live-music-venue"]);
+    expect(outdoor.venues.map((v) => v.id)).toEqual(["outdoor-venue"]);
+    expect(liveMusicAgain.cacheHit).toBe(true);
+    expect(liveMusicAgain.venues.map((v) => v.id)).toEqual(["live-music-venue"]);
+  });
 });

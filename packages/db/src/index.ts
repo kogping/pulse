@@ -46,11 +46,26 @@ export type { AttributeValue, AttributeView, AttributeViewRow, VenueCardData } f
 export {
   FEED_CLOSING_BUFFER_MINUTES,
   FEED_SCORING_WEIGHTS,
+  countVenuesPerFilter,
+  getClosingSoonVenues,
   getFeedVenues,
   getFeedVenuesWithLocation,
   isOpenWithBuffer,
 } from "./feed";
-export type { FeedVenueWithLocation, GetFeedVenuesParams, VenueHoursInput } from "./feed";
+export type {
+  CountVenuesPerFilterParams,
+  FeedVenueWithLocation,
+  GetFeedVenuesParams,
+  VenueHoursInput,
+} from "./feed";
+export {
+  INTENT_FILTER_REGISTRY,
+  INTENT_FILTER_REGISTRY_BY_ID,
+  NO_COVER_VALUE_TOKENS,
+  isIntentFilterId,
+  parseIntentFilterIds,
+} from "./intent-filters";
+export type { IntentFilterDef, IntentFilterId } from "./intent-filters";
 export { bumpPrecinctFeedCacheVersion, feedCacheVersionKey } from "./feed-cache";
 export type { FeedCacheVersionClient } from "./feed-cache";
 export {

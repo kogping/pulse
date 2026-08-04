@@ -1,6 +1,7 @@
 import { sql as drizzleSql } from "drizzle-orm";
 import { db } from "./client";
 import { buildVenueCard, fetchAttributeViewRows, type VenueCardData } from "./provenance";
+import { INTENT_FILTER_REGISTRY_BY_ID, NO_COVER_VALUE_TOKENS, type IntentFilterId } from "./intent-filters";
 
 // F1.1-F1.4: the core "what's good tonight" query. Never show a venue
 // that's closed or about to close (invariant: degrade honestly) — that
@@ -141,6 +142,82 @@ function openNowSqlCondition(now: Date, bufferMinutes: number) {
   )`;
 }
 
+// F1.6: SQL predicate for one intent filter, matched against
+// venue_attributes_resolved (the confidence-computing view — see
+// migrations/0001_attribute_confidence.sql). Returns null for open_now,
+// whose attributeKey is null because it's already enforced unconditionally
+// by the open_now CTE above, not by an attribute lookup.
+//
+// `var.value ILIKE 'yes%'` rather than `= 'yes'`: seed.ts and real curator
+// data both go wider than the registry's declared yes|no (e.g.
+// "ground floor only", "yes - rooftop"), so an exact match would silently
+// exclude venues that do satisfy the filter.
+//
+// `confidence <> 'unconfirmed'` on every branch: a filter must never match
+// on an attribute we can't currently attest, per CLAUDE.md's "degrade
+// honestly" invariant applied to filtering, not just display.
+function filterMatchSqlCondition(filterId: IntentFilterId, venueIdRef = drizzleSql`cv.id`) {
+  const def = INTENT_FILTER_REGISTRY_BY_ID.get(filterId);
+  if (!def || def.attributeKey === null) return null;
+
+  // cover_charge has no structured boolean field — it's curator free text
+  // ("$15 after 9pm", "free") — so "no cover" is a known, documented
+  // string-token match rather than a real enum comparison.
+  const valuePredicate =
+    filterId === "no_cover"
+      ? drizzleSql`lower(btrim(var.value)) IN (${drizzleSql.join(
+          NO_COVER_VALUE_TOKENS.map((token) => drizzleSql`${token}`),
+          drizzleSql`, `,
+        )})`
+      : drizzleSql`var.value ILIKE 'yes%'`;
+
+  return drizzleSql`EXISTS (
+    SELECT 1 FROM venue_attributes_resolved var
+    WHERE var.venue_id = ${venueIdRef}
+      AND var.attribute_key = ${def.attributeKey}
+      AND var.confidence <> 'unconfirmed'
+      AND ${valuePredicate}
+  )`;
+}
+
+function combineFilterConditions(filters: readonly IntentFilterId[]) {
+  const conditions = filters
+    .map((id) => filterMatchSqlCondition(id))
+    .filter((condition): condition is NonNullable<typeof condition> => condition !== null);
+  if (conditions.length === 0) return drizzleSql`true`;
+  return drizzleSql.join(conditions, drizzleSql` AND `);
+}
+
+// Shared candidate-venues + open-now CTE text, used by both the ranking
+// query and countVenuesPerFilter so the two never drift on what "the
+// candidate pool" means (precinct + radius + F1.1-F1.4 open-now exclusion).
+function candidateAndOpenNowCte(params: { precinct: string; lat: number; lng: number; radiusMeters: number; now: Date }) {
+  const { precinct, lat, lng, radiusMeters, now } = params;
+  return drizzleSql`
+    candidate_venues AS (
+      SELECT
+        v.id,
+        v.name,
+        v.precinct,
+        v.quality_tier,
+        v.location,
+        ST_Distance(v.location, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography) AS distance_m
+      FROM venues v
+      WHERE v.precinct = ${precinct}
+        AND ST_DWithin(v.location, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography, ${radiusMeters})
+    ),
+    open_now AS (
+      SELECT DISTINCT cv.id
+      FROM candidate_venues cv
+      JOIN venue_hours vh ON vh.venue_id = cv.id
+      WHERE vh.is_closed = false
+        AND vh.opens_at IS NOT NULL
+        AND vh.closes_at IS NOT NULL
+        AND ${openNowSqlCondition(now, FEED_CLOSING_BUFFER_MINUTES)}
+    )
+  `;
+}
+
 // Renders the FEED_SCORING_WEIGHTS constant into the ORDER BY expression,
 // so changing a weight above is the only edit a ranking change ever needs.
 function sqlStringLiteral(value: string): string {
@@ -167,6 +244,9 @@ export interface GetFeedVenuesParams {
   radiusMeters?: number;
   limit?: number;
   now?: Date;
+  /** F1.6 intent filters, AND-composed. open_now is a no-op here since the
+   *  base query already enforces it unconditionally. */
+  filters?: IntentFilterId[];
 }
 
 interface FeedCandidateRow extends Record<string, unknown> {
@@ -186,30 +266,10 @@ interface FeedCandidateRow extends Record<string, unknown> {
 // truth) keeps them, since the cache's post-read exact-distance sort needs
 // real venue coordinates that the public VenueCardData shape doesn't carry.
 async function runFeedRankingQuery(params: GetFeedVenuesParams): Promise<FeedCandidateRow[]> {
-  const { precinct, lat, lng, radiusMeters = 2000, limit = 10, now = new Date() } = params;
+  const { precinct, lat, lng, radiusMeters = 2000, limit = 10, now = new Date(), filters = [] } = params;
 
   const result = await db.execute<FeedCandidateRow>(drizzleSql`
-    WITH candidate_venues AS (
-      SELECT
-        v.id,
-        v.name,
-        v.precinct,
-        v.quality_tier,
-        v.location,
-        ST_Distance(v.location, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography) AS distance_m
-      FROM venues v
-      WHERE v.precinct = ${precinct}
-        AND ST_DWithin(v.location, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography, ${radiusMeters})
-    ),
-    open_now AS (
-      SELECT DISTINCT cv.id
-      FROM candidate_venues cv
-      JOIN venue_hours vh ON vh.venue_id = cv.id
-      WHERE vh.is_closed = false
-        AND vh.opens_at IS NOT NULL
-        AND vh.closes_at IS NOT NULL
-        AND ${openNowSqlCondition(now, FEED_CLOSING_BUFFER_MINUTES)}
-    ),
+    WITH ${candidateAndOpenNowCte({ precinct, lat, lng, radiusMeters, now })},
     badge_freshness AS (
       SELECT
         var.venue_id,
@@ -236,6 +296,7 @@ async function runFeedRankingQuery(params: GetFeedVenuesParams): Promise<FeedCan
       FROM candidate_venues cv
       JOIN open_now ON open_now.id = cv.id
       LEFT JOIN badge_freshness bf ON bf.venue_id = cv.id
+      WHERE ${combineFilterConditions(filters)}
     )
     SELECT id, name, precinct, ST_Y(location::geometry) AS lat, ST_X(location::geometry) AS lng
     FROM scored
@@ -281,4 +342,101 @@ export async function getFeedVenuesWithLocation(params: GetFeedVenuesParams): Pr
     lat: row.lat,
     lng: row.lng,
   }));
+}
+
+export interface CountVenuesPerFilterParams {
+  precinct: string;
+  lat: number;
+  lng: number;
+  radiusMeters?: number;
+  now?: Date;
+  filters: readonly IntentFilterId[];
+}
+
+// F1.7 rung 3 support: how many venues in the current candidate pool
+// (precinct + radius + open-now, independent of every OTHER active filter)
+// each droppable filter matches on its own. The relaxation ladder drops
+// whichever active filter comes back with the highest count here — the one
+// contributing least to narrowing the result set, i.e. the least selective
+// one. open_now is never included: it isn't droppable (see intent-filters.ts).
+export async function countVenuesPerFilter(
+  params: CountVenuesPerFilterParams,
+): Promise<Partial<Record<IntentFilterId, number>>> {
+  const { precinct, lat, lng, radiusMeters = 2000, now = new Date(), filters } = params;
+  const droppable = filters.filter((id) => INTENT_FILTER_REGISTRY_BY_ID.get(id)?.droppable);
+
+  const counts: Partial<Record<IntentFilterId, number>> = {};
+  await Promise.all(
+    droppable.map(async (filterId) => {
+      const condition = filterMatchSqlCondition(filterId) ?? drizzleSql`true`;
+      const result = await db.execute<{ count: number }>(drizzleSql`
+        WITH ${candidateAndOpenNowCte({ precinct, lat, lng, radiusMeters, now })}
+        SELECT COUNT(*)::int AS count
+        FROM candidate_venues cv
+        JOIN open_now ON open_now.id = cv.id
+        WHERE ${condition}
+      `);
+      counts[filterId] = result.rows[0]?.count ?? 0;
+    }),
+  );
+
+  return counts;
+}
+
+// F1.7 rung 5 support: venues open right now but closing within
+// FEED_CLOSING_BUFFER_MINUTES — the exact complement of the open_now CTE's
+// exclusion. Deliberately a separate function rather than a flag on
+// getFeedVenues/getFeedVenuesWithLocation: there is no way for a caller to
+// accidentally fold these into the main feed result, only to ask for them
+// explicitly for the labelled "closing soon" section (CLAUDE.md invariant 5
+// and the PRD's 45-minute rule are never relaxed).
+export async function getClosingSoonVenues(params: GetFeedVenuesParams): Promise<VenueCardData[]> {
+  const { precinct, lat, lng, radiusMeters = 2000, limit = 10, now = new Date() } = params;
+
+  const result = await db.execute<FeedCandidateRow>(drizzleSql`
+    WITH candidate_venues AS (
+      SELECT
+        v.id,
+        v.name,
+        v.precinct,
+        v.location,
+        ST_Distance(v.location, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography) AS distance_m
+      FROM venues v
+      WHERE v.precinct = ${precinct}
+        AND ST_DWithin(v.location, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography, ${radiusMeters})
+    ),
+    open_no_buffer AS (
+      SELECT DISTINCT cv.id
+      FROM candidate_venues cv
+      JOIN venue_hours vh ON vh.venue_id = cv.id
+      WHERE vh.is_closed = false
+        AND vh.opens_at IS NOT NULL
+        AND vh.closes_at IS NOT NULL
+        AND ${openNowSqlCondition(now, 0)}
+    ),
+    open_with_buffer AS (
+      SELECT DISTINCT cv.id
+      FROM candidate_venues cv
+      JOIN venue_hours vh ON vh.venue_id = cv.id
+      WHERE vh.is_closed = false
+        AND vh.opens_at IS NOT NULL
+        AND vh.closes_at IS NOT NULL
+        AND ${openNowSqlCondition(now, FEED_CLOSING_BUFFER_MINUTES)}
+    ),
+    closing_soon AS (
+      SELECT id FROM open_no_buffer
+      EXCEPT
+      SELECT id FROM open_with_buffer
+    )
+    SELECT cv.id, cv.name, cv.precinct, ST_Y(cv.location::geometry) AS lat, ST_X(cv.location::geometry) AS lng
+    FROM candidate_venues cv
+    JOIN closing_soon cs ON cs.id = cv.id
+    ORDER BY cv.distance_m ASC
+    LIMIT ${limit}
+  `);
+
+  if (result.rows.length === 0) return [];
+
+  const attributeRows = await fetchAttributeViewRows(result.rows.map((v) => v.id));
+  return result.rows.map((venue) => buildVenueCard(venue, attributeRows, now));
 }
