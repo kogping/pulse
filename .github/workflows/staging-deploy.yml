@@ -65,7 +65,13 @@ jobs:
       - name: Deploy prebuilt (non-production)
         id: deploy
         working-directory: apps/${{ matrix.project }}
-        run: echo "url=$(vercel deploy --prebuilt --token="$VERCEL_TOKEN")" >> "$GITHUB_OUTPUT"
+        # `url=$(...)` as its own statement, not nested inside `echo`, so a
+        # failing `vercel deploy` trips `set -e` and fails this step instead
+        # of silently writing an empty url output (which then breaks
+        # `vercel alias set` with a confusing "" argument error downstream).
+        run: |
+          url=$(vercel deploy --prebuilt --token="$VERCEL_TOKEN")
+          echo "url=$url" >> "$GITHUB_OUTPUT"
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
