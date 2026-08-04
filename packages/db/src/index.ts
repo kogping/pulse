@@ -43,8 +43,16 @@ export {
   getVenueForCard,
 } from "./provenance";
 export type { AttributeValue, AttributeView, AttributeViewRow, VenueCardData } from "./provenance";
-export { FEED_CLOSING_BUFFER_MINUTES, FEED_SCORING_WEIGHTS, getFeedVenues, isOpenWithBuffer } from "./feed";
-export type { GetFeedVenuesParams, VenueHoursInput } from "./feed";
+export {
+  FEED_CLOSING_BUFFER_MINUTES,
+  FEED_SCORING_WEIGHTS,
+  getFeedVenues,
+  getFeedVenuesWithLocation,
+  isOpenWithBuffer,
+} from "./feed";
+export type { FeedVenueWithLocation, GetFeedVenuesParams, VenueHoursInput } from "./feed";
+export { bumpPrecinctFeedCacheVersion, feedCacheVersionKey } from "./feed-cache";
+export type { FeedCacheVersionClient } from "./feed-cache";
 export {
   listPendingAuditSamples,
   pickWeightedSample,
