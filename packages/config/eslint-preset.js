@@ -12,7 +12,7 @@ module.exports = [
     },
   },
   {
-    files: ["**/*.config.js", "**/*.config.mjs"],
+    files: ["**/*.config.js", "**/*.config.cjs", "**/*.config.mjs"],
     languageOptions: {
       globals: { require: "readonly", module: "writable", process: "readonly" },
     },
