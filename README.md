@@ -162,7 +162,9 @@ pnpm latency:smoke https://pulse-web-clbh-three.vercel.app
 
 Hits that endpoint 50 times, prints p50/p75/p95 round trip, and writes
 `docs/baselines/latency-YYYY-MM-DD.md`. Exits non-zero if the reported region
-isn't `syd1` or p75 exceeds 250ms.
+isn't `syd1` or p75 exceeds 500ms (round trip, not just the function's own
+`dbMs`/`redisMs` — the budget has headroom for network jitter between the
+CI runner, which isn't in Sydney, and `syd1`).
 
 `.github/workflows/ci.yml` runs this automatically as the `latency-baseline`
 job on every push to `develop`, against the `PULSE_WEB_URL` repo variable

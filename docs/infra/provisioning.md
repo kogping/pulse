@@ -63,7 +63,10 @@ each be single-digit-to-low-double-digit milliseconds if Neon/Upstash are
 actually in `ap-southeast-2`. Run `scripts/latency-smoke.ts` against the
 deployed URL to get a repeatable p50/p75/p95 baseline (see
 [docs/baselines](../baselines)) — it fails the build/CI step if the reported
-region isn't `syd1` or p75 exceeds 250ms.
+region isn't `syd1` or p75 round trip exceeds 500ms (the CI runner isn't in
+Sydney, so this has headroom for network jitter on top of the
+single-digit-to-low-double-digit `dbMs`/`redisMs` that actually proves
+region colocation).
 
 ## Sentry (error tracking, both apps)
 
