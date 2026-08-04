@@ -36,6 +36,13 @@
       "when": 1785832262698,
       "tag": "0004_verification_actions",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1785840924804,
+      "tag": "0005_attribution_coi",
+      "breakpoints": true
     }
   ]
 }

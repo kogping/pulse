@@ -1,6 +1,22 @@
-import { ATTRIBUTE_REGISTRY, attributeConfidence, type QueueItem } from "@pulse/db";
+import { randomUUID } from "node:crypto";
+import { ATTRIBUTE_REGISTRY, attributeConfidence, type QueueItem, type ResolvedVenueAttribute } from "@pulse/db";
 import { globalSingleton } from "./global-store";
 import type { OutboxAction, OutboxActionResult } from "./outbox-types";
+
+export type PendingEditStatus = "pending" | "approved" | "rejected";
+
+export interface PendingEditSummary {
+  id: string;
+  venueAttributeId: string;
+  venueId: string;
+  curatorId: string;
+  previousValue: string;
+  newValue: string;
+  status: PendingEditStatus;
+  createdAt: Date;
+}
+
+export type DecidePendingEditResult = "not_found" | "already_decided" | "self_approval" | "applied" | "rejected";
 
 // Storage abstraction for the verification queue — same rationale as
 // venue-store.ts/curator-store.ts: production goes through Drizzle/Neon,
@@ -8,9 +24,25 @@ import type { OutboxAction, OutboxActionResult } from "./outbox-types";
 // so neither needs a live database. Unlike those stores, the Drizzle branch
 // below still dynamic-imports the driver-touching pieces (db, schema
 // tables), so AUTH_TEST_MODE runs never load @neondatabase/serverless.
+//
+// Also owns conflict-of-interest enforcement (F0.3): declared interests
+// (declareInterest) keep a venue out of that curator's own queue
+// (nextBatch), and any 'correct' action against a venue the curator has
+// declared an interest in is parked in pending_edits (applyActions) rather
+// than applied to venue_attributes — decidePendingEdit is the only path
+// that can move it from there into venue_attributes, and it refuses to let
+// the declaring curator be the one who approves it.
 export interface QueueStore {
   nextBatch(curatorId: string, size: number): Promise<QueueItem[]>;
   applyActions(curatorId: string, actions: OutboxAction[]): Promise<OutboxActionResult[]>;
+  declareInterest(curatorId: string, venueId: string, nature: string): Promise<void>;
+  listPendingEdits(status?: PendingEditStatus): Promise<PendingEditSummary[]>;
+  decidePendingEdit(pendingEditId: string, decision: "approve" | "reject", decidingCuratorId: string): Promise<DecidePendingEditResult>;
+  // The public read path for a single attribute — deliberately the same
+  // discriminated union apps/web would receive, so this doubles as proof
+  // that an unapproved pending edit can't leak a value that hasn't been
+  // vouched for.
+  getPublicAttribute(venueAttributeId: string): Promise<ResolvedVenueAttribute | null>;
 }
 
 function createDrizzleQueueStore(): QueueStore {
@@ -20,8 +52,38 @@ function createDrizzleQueueStore(): QueueStore {
       return nextQueueBatch(curatorId, size);
     },
 
+    async declareInterest(curatorId, venueId, nature) {
+      const { declareInterest } = await import("@pulse/db");
+      await declareInterest(curatorId, venueId, nature);
+    },
+
+    async listPendingEdits(status = "pending") {
+      const { listPendingEdits } = await import("@pulse/db");
+      const rows = await listPendingEdits(status);
+      return rows.map((row) => ({
+        id: row.id,
+        venueAttributeId: row.venueAttributeId,
+        venueId: row.venueId,
+        curatorId: row.curatorId,
+        previousValue: row.previousValue,
+        newValue: row.newValue,
+        status: row.status,
+        createdAt: row.createdAt,
+      }));
+    },
+
+    async decidePendingEdit(pendingEditId, decision, decidingCuratorId) {
+      const { decidePendingEdit } = await import("@pulse/db");
+      return decidePendingEdit(pendingEditId, decision, decidingCuratorId);
+    },
+
+    async getPublicAttribute(venueAttributeId) {
+      const { resolvePublicAttribute } = await import("@pulse/db");
+      return resolvePublicAttribute(venueAttributeId);
+    },
+
     async applyActions(curatorId, actions) {
-      const { db, venueAttributes, verificationEvents } = await import("@pulse/db");
+      const { db, venueAttributes, verificationEvents, pendingEdits, hasDeclaredInterest } = await import("@pulse/db");
       const { eq, sql } = await import("drizzle-orm");
 
       const sorted = [...actions].sort((a, b) => a.seq - b.seq);
@@ -30,12 +92,37 @@ function createDrizzleQueueStore(): QueueStore {
       for (const action of sorted) {
         try {
           const [attribute] = await db
-            .select({ id: venueAttributes.id })
+            .select({ id: venueAttributes.id, venueId: venueAttributes.venueId })
             .from(venueAttributes)
             .where(eq(venueAttributes.id, action.venueAttributeId))
             .limit(1);
           if (!attribute) {
             results.push({ id: action.id, status: "rejected", reason: "unknown venue attribute" });
+            continue;
+          }
+
+          // Only 'correct' actually changes venue_attributes.value — a
+          // 'confirm' just re-stamps last_verified_at and a 'revert'
+          // restores a prior verified snapshot, neither of which is the
+          // kind of unilateral edit COI is guarding against. The queue
+          // batch already excludes conflicted venues entirely (queue.ts),
+          // so this is the backstop for a stale client-side outbox action
+          // queued before the interest was declared.
+          if (action.kind === "correct" && (await hasDeclaredInterest(curatorId, attribute.venueId))) {
+            const inserted = await db
+              .insert(pendingEdits)
+              .values({
+                venueAttributeId: action.venueAttributeId,
+                venueId: attribute.venueId,
+                curatorId,
+                previousValue: action.previousValue,
+                newValue: action.value!,
+                durationMs: action.durationMs ?? null,
+                clientActionId: action.id,
+              })
+              .onConflictDoNothing({ target: pendingEdits.clientActionId, where: sql`${pendingEdits.clientActionId} is not null` })
+              .returning({ id: pendingEdits.id });
+            results.push(inserted.length === 0 ? { id: action.id, status: "duplicate" } : { id: action.id, status: "pending_review" });
             continue;
           }
 
@@ -110,6 +197,17 @@ interface InMemoryVenueAttribute {
   flagCount: number;
 }
 
+interface InMemoryPendingEdit {
+  id: string;
+  venueAttributeId: string;
+  venueId: string;
+  curatorId: string;
+  previousValue: string;
+  newValue: string;
+  status: PendingEditStatus;
+  createdAt: Date;
+}
+
 export interface AppliedRecord {
   clientActionId: string;
   venueAttributeId: string;
@@ -127,12 +225,22 @@ function testAppliedActionIds() {
 function testAppliedLog() {
   return globalSingleton("test-queue-applied-log", () => [] as AppliedRecord[]);
 }
+// Keyed `${curatorId}:${venueId}` — a Set is enough, "nature" isn't needed
+// by any enforcement check, only by the (unimplemented in-memory) audit view.
+function testInterests() {
+  return globalSingleton("test-curator-venue-interests", () => new Set<string>());
+}
+function testPendingEdits() {
+  return globalSingleton("test-pending-edits", () => new Map<string, InMemoryPendingEdit>());
+}
 
 function createInMemoryQueueStore(): QueueStore {
   return {
-    async nextBatch(_curatorId, size) {
+    async nextBatch(curatorId, size) {
       const now = new Date();
+      const interests = testInterests();
       return [...testAttributes().values()]
+        .filter((a) => !interests.has(`${curatorId}:${a.venueId}`))
         .sort((a, b) => {
           if (a.flagCount > 0 !== b.flagCount > 0) return a.flagCount > 0 ? -1 : 1;
           return a.lastVerifiedAt.getTime() - b.lastVerifiedAt.getTime();
@@ -162,10 +270,60 @@ function createInMemoryQueueStore(): QueueStore {
         );
     },
 
-    async applyActions(_curatorId, actions) {
+    async declareInterest(curatorId, venueId) {
+      testInterests().add(`${curatorId}:${venueId}`);
+    },
+
+    async listPendingEdits(status = "pending") {
+      return [...testPendingEdits().values()].filter((e) => e.status === status);
+    },
+
+    async decidePendingEdit(pendingEditId, decision, decidingCuratorId) {
+      const edit = testPendingEdits().get(pendingEditId);
+      if (!edit) return "not_found";
+      if (edit.status !== "pending") return "already_decided";
+      if (edit.curatorId === decidingCuratorId) return "self_approval";
+
+      if (decision === "reject") {
+        edit.status = "rejected";
+        return "rejected";
+      }
+
+      const record = testAttributes().get(edit.venueAttributeId);
+      if (record) {
+        record.value = edit.newValue;
+        record.lastVerifiedAt = new Date();
+      }
+      edit.status = "approved";
+      testAppliedLog().push({
+        clientActionId: edit.id,
+        venueAttributeId: edit.venueAttributeId,
+        kind: "correct",
+        value: edit.newValue,
+        at: new Date().toISOString(),
+      });
+      return "applied";
+    },
+
+    async getPublicAttribute(venueAttributeId) {
+      const record = testAttributes().get(venueAttributeId);
+      if (!record) return null;
+      const confidence = attributeConfidence({
+        attributeKey: record.attributeKey,
+        lastVerifiedAt: record.lastVerifiedAt,
+        flagCount: record.flagCount,
+        now: new Date(),
+      });
+      if (confidence === "unconfirmed") return { confidence };
+      return { confidence, value: record.value, lastVerifiedAt: record.lastVerifiedAt };
+    },
+
+    async applyActions(curatorId, actions) {
       const attributes = testAttributes();
       const appliedActionIds = testAppliedActionIds();
       const applied = testAppliedLog();
+      const interests = testInterests();
+      const pending = testPendingEdits();
       const sorted = [...actions].sort((a, b) => a.seq - b.seq);
       const results: OutboxActionResult[] = [];
 
@@ -177,6 +335,23 @@ function createInMemoryQueueStore(): QueueStore {
         }
         if (appliedActionIds.has(action.id)) {
           results.push({ id: action.id, status: "duplicate" });
+          continue;
+        }
+
+        if (action.kind === "correct" && interests.has(`${curatorId}:${record.venueId}`)) {
+          const id = randomUUID();
+          pending.set(id, {
+            id,
+            venueAttributeId: action.venueAttributeId,
+            venueId: record.venueId,
+            curatorId,
+            previousValue: action.previousValue,
+            newValue: action.value!,
+            status: "pending",
+            createdAt: new Date(),
+          });
+          appliedActionIds.add(action.id);
+          results.push({ id: action.id, status: "pending_review" });
           continue;
         }
 
@@ -224,6 +399,8 @@ export function seedTestQueue(size = 20): QueueItem[] {
   const attributes = testAttributes();
   testAppliedActionIds().clear();
   testAppliedLog().length = 0;
+  testInterests().clear();
+  testPendingEdits().clear();
   attributes.clear();
 
   const items: QueueItem[] = [];
@@ -262,4 +439,16 @@ export function seedTestQueue(size = 20): QueueItem[] {
 
 export function getTestQueueState(): { applied: AppliedRecord[] } {
   return { applied: [...testAppliedLog()] };
+}
+
+// Test-only: seedTestQueue backdates every item so staleness-ordering
+// assertions have a clear signal, which also makes them 'unconfirmed' by
+// the time a same-day COI test reads them back (freshness decays in well
+// under the months of gap between the fixed seed date and "now"). Lets a
+// test put a specific item back within its fresh/ageing window so the
+// public read path assertions have a value to compare, not just a
+// confidence tier.
+export function setTestAttributeVerifiedAt(id: string, at: Date): void {
+  const record = testAttributes().get(id);
+  if (record) record.lastVerifiedAt = at;
 }

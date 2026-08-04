@@ -30,12 +30,19 @@ export function hasExceededMaxAttempts(attempts: number): boolean {
   return attempts >= MAX_FLUSH_ATTEMPTS;
 }
 
-// applied/duplicate/rejected are all terminal from the client's point of
-// view: applied and duplicate both mean the server has the verification
-// recorded, and rejected (e.g. an unknown venue_attribute_id) can never
-// succeed on retry. Only a missing result (request-level failure, so no
-// results array at all) leaves a record pending.
-const TERMINAL_STATUSES: ReadonlySet<OutboxActionResult["status"]> = new Set(["applied", "duplicate", "rejected"]);
+// applied/duplicate/rejected/pending_review are all terminal from the
+// client's point of view: applied and duplicate both mean the server has
+// the verification recorded, rejected (e.g. an unknown venue_attribute_id)
+// can never succeed on retry, and pending_review means the server has it
+// safely parked in pending_edits awaiting a second curator. Only a missing
+// result (request-level failure, so no results array at all) leaves a
+// record pending.
+const TERMINAL_STATUSES: ReadonlySet<OutboxActionResult["status"]> = new Set([
+  "applied",
+  "duplicate",
+  "rejected",
+  "pending_review",
+]);
 
 export function idsToRemove(results: OutboxActionResult[]): string[] {
   return results.filter((r) => TERMINAL_STATUSES.has(r.status)).map((r) => r.id);

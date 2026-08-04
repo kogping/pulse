@@ -110,7 +110,12 @@ export async function nextQueueBatch(curatorId: string, size = 20): Promise<Queu
     })
     .from(venueAttributes)
     .innerJoin(venues, eq(venues.id, venueAttributes.venueId))
-    .where(eq(venues.precinct, curator.precinctId));
+    .where(
+      sql`${venues.precinct} = ${curator.precinctId} and not exists (
+        select 1 from curator_venue_interests cvi
+        where cvi.venue_id = ${venues.id} and cvi.curator_id = ${curatorId}
+      )`,
+    );
 
   return buildQueueItems(rows, size, new Date());
 }
