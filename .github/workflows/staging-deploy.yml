@@ -42,12 +42,22 @@ jobs:
       - name: Install Vercel CLI
         run: npm install --global vercel@latest
 
+      # Run from the repo root, not from inside apps/<project>: both Vercel
+      # projects have their "Root Directory" project setting configured as
+      # apps/web / apps/console (required so Vercel's own git-integration
+      # deploys — see README "Environments" — can find the app and so
+      # vercel.json's `buildCommand: "cd ../.. && ..."` resolves correctly).
+      # Running the CLI from inside apps/<project> would double-apply that
+      # Root Directory (apps/console/apps/console) and hard-fail on
+      # `vercel deploy`. Letting the CLI apply Root Directory itself, the
+      # same way the git integration does, is the fix Vercel's own build
+      # warning recommends ("...or configure it at the repository root").
+      #
       # `--git-branch develop` pulls the Preview env vars scoped to `develop`
       # specifically (see the "staging" environment's Vercel project
       # settings) — this is how NEON_STAGING DATABASE_URL gets into the
       # build instead of production's.
       - name: Pull Vercel project settings + env
-        working-directory: apps/${{ matrix.project }}
         run: vercel pull --yes --environment=preview --git-branch=develop --token="$VERCEL_TOKEN"
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -55,7 +65,6 @@ jobs:
           VERCEL_PROJECT_ID: ${{ matrix.project == 'web' && secrets.VERCEL_PROJECT_ID_WEB || secrets.VERCEL_PROJECT_ID_CONSOLE }}
 
       - name: Build (non-production)
-        working-directory: apps/${{ matrix.project }}
         run: vercel build --token="$VERCEL_TOKEN"
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -64,7 +73,6 @@ jobs:
 
       - name: Deploy prebuilt (non-production)
         id: deploy
-        working-directory: apps/${{ matrix.project }}
         # `url=$(...)` as its own statement, not nested inside `echo`, so a
         # failing `vercel deploy` trips `set -e` and fails this step instead
         # of silently writing an empty url output (which then breaks
@@ -78,7 +86,6 @@ jobs:
           VERCEL_PROJECT_ID: ${{ matrix.project == 'web' && secrets.VERCEL_PROJECT_ID_WEB || secrets.VERCEL_PROJECT_ID_CONSOLE }}
 
       - name: Alias to the staging domain
-        working-directory: apps/${{ matrix.project }}
         run: |
           alias_domain="${{ matrix.project == 'web' && vars.STAGING_WEB_ALIAS || vars.STAGING_CONSOLE_ALIAS }}"
           vercel alias set "${{ steps.deploy.outputs.url }}" "$alias_domain" --token="$VERCEL_TOKEN"
