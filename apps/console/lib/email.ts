@@ -36,7 +36,7 @@ export async function sendMagicLinkEmail(params: { to: string; url: string }): P
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      from: process.env.AUTH_EMAIL_FROM ?? "Pulse Sydney Console <console@pulse.sydney>",
+      from: process.env.AUTH_EMAIL_FROM ?? "Pulse Sydney Console <send@sanc.au>",
       to: params.to,
       subject: "Sign in to Pulse Sydney Console",
       html: `<p>Click the link below to sign in. It expires in 24 hours.</p><p><a href="${params.url}">${params.url}</a></p>`,
