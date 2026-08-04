@@ -73,9 +73,13 @@ Vercel deployment:
 
 | Environment    | Git trigger                              | Vercel deployment                                                                 | Database                                       |
 | -------------- | ----------------------------------------- | ---------------------------------------------------------------------------------- | ----------------------------------------------- |
-| **Production** | push to `main` (migrations only)          | Vercel's own git integration, Production Branch = `develop` (both projects)        | Neon default/production branch                  |
+| **Production** | push to `main` (migrations only)          | Vercel's own git integration, Production Branch = `develop` (both projects)        | Neon `production` branch (the project's default branch) |
 | **Staging**    | push to `develop`                         | `.github/workflows/staging-deploy.yml` — CLI-built Preview deployment aliased to a dedicated staging domain, independent of the production deployment `develop` also triggers | Neon `staging` branch, reset nightly from a production snapshot (`staging-reset.yml`) |
-| **Preview**    | PR opened/reopened against `develop`      | Vercel's own git integration (normal Preview deployment for the PR's branch)        | Neon `preview/pr-<number>` branch, created off `main` per PR (`preview-db.yml`) |
+| **Preview**    | PR opened/reopened against `develop`      | Vercel's own git integration (normal Preview deployment for the PR's branch)        | Neon `preview/pr-<number>` branch, created off Neon `production` per PR (`preview-db.yml`) |
+
+Note that git branch names and Neon branch names are two separate
+namespaces: the Neon project's default/primary branch is named `production`,
+independent of which *git* branch (`main`) triggers migrations against it.
 
 Notes:
 
@@ -84,11 +88,11 @@ Notes:
   `staging-deploy.yml` also builds independently for a preproduction smoke
   surface. These are two separate deployments of the same commit; the
   staging one never touches the production domain or the production DB.
-- Migrations (`migrate.yml`) apply to the Neon production branch on push to
+- Migrations (`migrate.yml`) apply to the Neon `production` branch on push to
   the git `main` branch — not `develop`. `main` exists in this repo purely as
   the migration trigger / PR base for schema changes; `develop` is where
   day-to-day feature work merges. `preview-db.yml` branches PR databases off
-  Neon `main`/production (not `staging`) so every PR starts from the same
+  Neon `production` (not `staging`) so every PR starts from the same
   baseline production does.
 - `staging-reset.yml` runs nightly and uses Neon's "reset from parent" API,
   which recreates `staging`'s storage (schema + data) from production's
@@ -101,7 +105,7 @@ Notes:
 | Name                              | Where                          | Purpose                                                        |
 | ----------------------------------| --------------------------------| ----------------------------------------------------------------|
 | `NEON_API_KEY`                    | repo secret                     | Create/delete/reset Neon branches                               |
-| `NEON_PROJECT_ID`                 | repo secret                     | Neon project containing `main`/production and `staging` branches |
+| `NEON_PROJECT_ID`                 | repo secret                     | Neon project containing the `production` and `staging` branches |
 | `VERCEL_TOKEN`                    | repo secret                     | Vercel CLI/API auth                                             |
 | `VERCEL_ORG_ID`                   | repo secret                     | Vercel team id                                                  |
 | `VERCEL_PROJECT_ID_WEB`           | repo secret                     | `pulse-web` Vercel project id                                   |
