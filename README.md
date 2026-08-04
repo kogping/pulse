@@ -60,6 +60,25 @@ pnpm build
   [Sydney latency baseline](#sydney-latency-baseline)) and fails the job if
   the region isn't `syd1` or p75 exceeds the budget.
 
+## Instrumentation
+
+- **Sentry** — both apps init client/server/edge (`sentry.*.config.ts` +
+  `instrumentation.ts`), source maps upload from whichever build runs
+  `next build` (`vercel build` in `staging-deploy.yml`, or Vercel's own
+  git-integration build for production) when `SENTRY_AUTH_TOKEN` is set,
+  release tagged by `VERCEL_GIT_COMMIT_SHA`. PII scrubbing (no coordinates,
+  no email) is enforced via `@pulse/analytics`'s `scrubPii`. Required env
+  vars and where to get them: see
+  [docs/infra/provisioning.md](docs/infra/provisioning.md#sentry-error-tracking-both-apps).
+- **Vercel Speed Insights** — `apps/web` only (`<SpeedInsights />` in the
+  root layout).
+- **`@pulse/analytics`** — typed `track()` over a closed event-name union
+  (see `packages/analytics/src/events.ts`); adding an event requires editing
+  that union. Drops any payload key matching `/lat|lng|latitude|longitude|coords/`
+  before it leaves the app. `apps/web`'s `/debug/events` page (dev-only,
+  404s in production) renders the last 50 events tracked in the current
+  browser.
+
 ## Migrations
 
 Migrations run exclusively from a GitHub Actions workflow, never from a
