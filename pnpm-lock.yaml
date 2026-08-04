@@ -7,6 +7,10 @@ settings:
 importers:
 
   .:
+    dependencies:
+      '@pulse/db':
+        specifier: workspace:*
+        version: link:packages/db
     devDependencies:
       gtfs-realtime-bindings:
         specifier: ^2.2.0

@@ -1,0 +1,45 @@
+name: Audit sample
+
+# §9 audit tooling: nightly weighted-random sample of 20 venue-attributes
+# for a curator to mark correct/incorrect against reality, feeding the
+# weekly badge-accuracy % the >=90% gate is read from.
+on:
+  schedule:
+    - cron: "0 15 * * *" # 01:00 Sydney (AEST, UTC+10) — see docs/runbook for DST handling
+  workflow_dispatch: {}
+
+concurrency:
+  group: audit-sample
+  cancel-in-progress: false
+
+jobs:
+  sample:
+    name: sample and announce
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build @pulse/db
+        run: pnpm --filter @pulse/db build
+
+      - name: Sample and record
+        run: pnpm audit:sample
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
+          UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+          PULSE_CONSOLE_URL: ${{ vars.PULSE_CONSOLE_URL }}
