@@ -122,7 +122,9 @@ export function buildVenueCard(
   };
 }
 
-async function fetchAttributeViewRows(venueIds: string[]): Promise<AttributeViewRow[]> {
+// Exported for feed.ts, which needs the same raw rows to build
+// AttributeView-shaped badges for the ranked feed query.
+export async function fetchAttributeViewRows(venueIds: string[]): Promise<AttributeViewRow[]> {
   if (venueIds.length === 0) return [];
   return db
     .select({
@@ -162,28 +164,6 @@ export async function getVenueForCard(venueId: string): Promise<VenueCardData | 
 
   const attributeRows = await fetchAttributeViewRows([venueId]);
   return buildVenueCard(venue, attributeRows, new Date());
-}
-
-export interface GetFeedVenuesParams {
-  precinct?: string;
-  limit?: number;
-}
-
-// The public read path for a feed page: every venue (optionally filtered to
-// one precinct), each with its attributes shaped as AttributeView.
-export async function getFeedVenues(params: GetFeedVenuesParams = {}): Promise<VenueCardData[]> {
-  const { precinct, limit = 20 } = params;
-
-  const venueRows = await db
-    .select({ id: venues.id, name: venues.name, precinct: venues.precinct })
-    .from(venues)
-    .where(precinct ? eq(venues.precinct, precinct) : undefined)
-    .limit(limit);
-  if (venueRows.length === 0) return [];
-
-  const attributeRows = await fetchAttributeViewRows(venueRows.map((v) => v.id));
-  const now = new Date();
-  return venueRows.map((venue) => buildVenueCard(venue, attributeRows, now));
 }
 
 // Dev/test-only guard: throws with a readable diff-style message the first

@@ -40,10 +40,11 @@ export {
   assertValidAttributeViews,
   buildAttributeView,
   buildVenueCard,
-  getFeedVenues,
   getVenueForCard,
 } from "./provenance";
-export type { AttributeValue, AttributeView, AttributeViewRow, GetFeedVenuesParams, VenueCardData } from "./provenance";
+export type { AttributeValue, AttributeView, AttributeViewRow, VenueCardData } from "./provenance";
+export { FEED_CLOSING_BUFFER_MINUTES, FEED_SCORING_WEIGHTS, getFeedVenues, isOpenWithBuffer } from "./feed";
+export type { GetFeedVenuesParams, VenueHoursInput } from "./feed";
 export {
   listPendingAuditSamples,
   pickWeightedSample,
