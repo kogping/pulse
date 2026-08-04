@@ -173,15 +173,19 @@ interface FeedCandidateRow extends Record<string, unknown> {
   id: string;
   name: string;
   precinct: string;
+  lat: number;
+  lng: number;
 }
 
-// The public read path for a feed page (F1.1-F1.4): venues within
+// Shared query body for the feed ranking pipeline (F1.1-F1.4): venues within
 // `radiusMeters` of (lat, lng) in `precinct`, filtered to those open right
 // now and not closing within FEED_CLOSING_BUFFER_MINUTES, ranked by
-// FEED_SCORING_WEIGHTS, capped at `limit`. Attributes are returned
-// exclusively as AttributeView badges (provenance.ts) — there is no path
-// from this function's return value back to a bare venue_attributes value.
-export async function getFeedVenues(params: GetFeedVenuesParams): Promise<VenueCardData[]> {
+// FEED_SCORING_WEIGHTS, capped at `limit`. Returns raw coordinates alongside
+// each row — getFeedVenues (below) discards them to keep its public return
+// type provenance-only; getFeedVenuesWithLocation (feed-cache.ts's source of
+// truth) keeps them, since the cache's post-read exact-distance sort needs
+// real venue coordinates that the public VenueCardData shape doesn't carry.
+async function runFeedRankingQuery(params: GetFeedVenuesParams): Promise<FeedCandidateRow[]> {
   const { precinct, lat, lng, radiusMeters = 2000, limit = 10, now = new Date() } = params;
 
   const result = await db.execute<FeedCandidateRow>(drizzleSql`
@@ -191,6 +195,7 @@ export async function getFeedVenues(params: GetFeedVenuesParams): Promise<VenueC
         v.name,
         v.precinct,
         v.quality_tier,
+        v.location,
         ST_Distance(v.location, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography) AS distance_m
       FROM venues v
       WHERE v.precinct = ${precinct}
@@ -225,25 +230,55 @@ export async function getFeedVenues(params: GetFeedVenuesParams): Promise<VenueC
         cv.name,
         cv.precinct,
         cv.quality_tier,
+        cv.location,
         LEAST(cv.distance_m / NULLIF(${radiusMeters}::float, 0), 1) AS normalised_distance,
         COALESCE(bf.freshness_score, 0.5) AS freshness_score
       FROM candidate_venues cv
       JOIN open_now ON open_now.id = cv.id
       LEFT JOIN badge_freshness bf ON bf.venue_id = cv.id
     )
-    SELECT id, name, precinct
+    SELECT id, name, precinct, ST_Y(location::geometry) AS lat, ST_X(location::geometry) AS lng
     FROM scored
     ORDER BY ${scoreSqlExpression()} DESC
     LIMIT ${limit}
   `);
 
-  const venueRows = result.rows.map((r) => ({
-    id: r.id,
-    name: r.name,
-    precinct: r.precinct,
-  }));
-  if (venueRows.length === 0) return [];
+  return result.rows;
+}
 
-  const attributeRows = await fetchAttributeViewRows(venueRows.map((v) => v.id));
-  return venueRows.map((venue) => buildVenueCard(venue, attributeRows, now));
+// The public read path for a feed page. Attributes are returned exclusively
+// as AttributeView badges (provenance.ts) — there is no path from this
+// function's return value back to a bare venue_attributes value, and no
+// coordinates leak out either (see runFeedRankingQuery above).
+export async function getFeedVenues(params: GetFeedVenuesParams): Promise<VenueCardData[]> {
+  const rows = await runFeedRankingQuery(params);
+  if (rows.length === 0) return [];
+
+  const attributeRows = await fetchAttributeViewRows(rows.map((v) => v.id));
+  const now = params.now ?? new Date();
+  return rows.map((venue) => buildVenueCard(venue, attributeRows, now));
+}
+
+export interface FeedVenueWithLocation {
+  venue: VenueCardData;
+  lat: number;
+  lng: number;
+}
+
+// Same ranked candidate set as getFeedVenues, but keeps each venue's
+// coordinates. Used exclusively by the feed cache (apps/web/app/api/feed/
+// feed-cache.ts), which caches this coarser, geohash-cell-shared result and
+// then re-sorts by exact distance from each request's true coordinates
+// after reading it back — see CLAUDE.md's Redis feed cache spec.
+export async function getFeedVenuesWithLocation(params: GetFeedVenuesParams): Promise<FeedVenueWithLocation[]> {
+  const rows = await runFeedRankingQuery(params);
+  if (rows.length === 0) return [];
+
+  const attributeRows = await fetchAttributeViewRows(rows.map((v) => v.id));
+  const now = params.now ?? new Date();
+  return rows.map((row) => ({
+    venue: buildVenueCard(row, attributeRows, now),
+    lat: row.lat,
+    lng: row.lng,
+  }));
 }

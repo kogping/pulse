@@ -1,0 +1,163 @@
+import type { VenueCardData } from "@pulse/db";
+import { geohashEncode, haversineDistanceMeters } from "./geohash";
+
+// Redis feed cache (CLAUDE.md: "Redis feed cache in Upstash").
+//
+// Key shape: feed:{precinct}:{geohash5}:{5-min-bucket}:{filter-hash}:v{version}
+//   - geohash5 buckets nearby requesters into the same cell so they share a
+//     cache entry.
+//   - the 5-min bucket is the TTL window.
+//   - filter-hash distinguishes radius/limit combinations.
+//   - version is a per-precinct counter (see @pulse/db's
+//     bumpPrecinctFeedCacheVersion): bumping it makes every previously
+//     cached key for that precinct unreachable without a SCAN-and-delete —
+//     new reads compute a new key, old keys just expire via TTL.
+//
+// The cached payload keeps each venue's raw coordinates (not exposed on the
+// public VenueCardData shape) so that after a cache read, results can be
+// re-sorted by *exact* distance from the requester's true coordinates —
+// the cache only needs to agree on the candidate set and coarse ranking,
+// not on which of two nearby requesters a venue is closer to.
+
+export const FEED_CACHE_BUCKET_MS = 5 * 60 * 1000;
+export const FEED_CACHE_TTL_SECONDS = 5 * 60;
+export const FEED_CACHE_GEOHASH_PRECISION = 5;
+
+export interface FeedCacheRedisClient {
+  get<T>(key: string): Promise<T | null>;
+  set(key: string, value: unknown, opts?: { ex?: number }): Promise<unknown>;
+}
+
+export interface FeedCacheVenue {
+  venue: VenueCardData;
+  lat: number;
+  lng: number;
+}
+
+export type FetchFeedVenues = (params: {
+  precinct: string;
+  lat: number;
+  lng: number;
+  radiusMeters?: number;
+  limit?: number;
+  now?: Date;
+}) => Promise<FeedCacheVenue[]>;
+
+export interface FeedCacheParams {
+  precinct: string;
+  lat: number;
+  lng: number;
+  radiusMeters?: number;
+  limit?: number;
+  now?: Date;
+}
+
+export interface FeedCacheLogger {
+  warn(message: string, meta?: Record<string, unknown>): void;
+}
+
+export type FeedCacheMetricEvent = "hit" | "miss" | "degraded";
+
+export interface FeedCacheDeps {
+  redis: FeedCacheRedisClient;
+  fetchVenues: FetchFeedVenues;
+  logger?: FeedCacheLogger;
+  recordMetric?: (event: FeedCacheMetricEvent) => void;
+}
+
+export interface FeedCacheResult {
+  venues: VenueCardData[];
+  /** True if a cached result was reused instead of querying Postgres. */
+  cacheHit: boolean;
+  /** True if Redis was unreachable and the request fell straight through to Postgres. */
+  degraded: boolean;
+}
+
+const consoleLogger: FeedCacheLogger = {
+  warn(message, meta) {
+    console.warn(`[feed-cache] ${message}`, meta ?? {});
+  },
+};
+
+function feedCacheVersionKey(precinct: string): string {
+  return `feed:version:${precinct}`;
+}
+
+function feedCacheBucket(now: Date): number {
+  return Math.floor(now.getTime() / FEED_CACHE_BUCKET_MS);
+}
+
+// Small deterministic non-cryptographic hash (djb2-style) — this only needs
+// to distinguish filter combinations inside a cache key, not resist attack.
+function feedCacheFilterHash(filters: { radiusMeters: number; limit: number }): string {
+  const input = `${filters.radiusMeters}:${filters.limit}`;
+  let hash = 0;
+  for (let i = 0; i < input.length; i++) hash = (hash * 31 + input.charCodeAt(i)) | 0;
+  return (hash >>> 0).toString(36);
+}
+
+function buildFeedCacheKey(params: { precinct: string; geohash5: string; bucket: number; filterHash: string; version: number }): string {
+  return `feed:${params.precinct}:${params.geohash5}:${params.bucket}:${params.filterHash}:v${params.version}`;
+}
+
+function sortByExactDistance(entries: FeedCacheVenue[], origin: { lat: number; lng: number }, limit: number): VenueCardData[] {
+  return [...entries]
+    .sort(
+      (a, b) =>
+        haversineDistanceMeters(origin, { lat: a.lat, lng: a.lng }) - haversineDistanceMeters(origin, { lat: b.lat, lng: b.lng }),
+    )
+    .slice(0, limit)
+    .map((entry) => entry.venue);
+}
+
+// Cache read/write failures fall through to Postgres, never a 500 — see
+// CLAUDE.md. `deps.fetchVenues` is the only path that ever hits Postgres;
+// everything above it is cache bookkeeping around that one call.
+export async function getFeedWithCache(params: FeedCacheParams, deps: FeedCacheDeps): Promise<FeedCacheResult> {
+  const { precinct, lat, lng, radiusMeters = 2000, limit = 10 } = params;
+  const now = params.now ?? new Date();
+  const logger = deps.logger ?? consoleLogger;
+  const recordMetric = deps.recordMetric ?? (() => {});
+  const origin = { lat, lng };
+
+  let version: number | null = null;
+  try {
+    const raw = await deps.redis.get<number | string>(feedCacheVersionKey(precinct));
+    version = raw ? Number(raw) : 0;
+  } catch (error) {
+    logger.warn("redis unreachable reading precinct version; falling through to Postgres", { precinct, error });
+  }
+
+  if (version === null) {
+    recordMetric("degraded");
+    const fresh = await deps.fetchVenues({ precinct, lat, lng, radiusMeters, limit, now });
+    return { venues: sortByExactDistance(fresh, origin, limit), cacheHit: false, degraded: true };
+  }
+
+  const geohash5 = geohashEncode(lat, lng, FEED_CACHE_GEOHASH_PRECISION);
+  const bucket = feedCacheBucket(now);
+  const filterHash = feedCacheFilterHash({ radiusMeters, limit });
+  const key = buildFeedCacheKey({ precinct, geohash5, bucket, filterHash, version });
+
+  let cached: FeedCacheVenue[] | null = null;
+  try {
+    cached = await deps.redis.get<FeedCacheVenue[]>(key);
+  } catch (error) {
+    logger.warn("redis unreachable reading feed cache key; falling through to Postgres", { key, error });
+  }
+
+  if (cached) {
+    recordMetric("hit");
+    return { venues: sortByExactDistance(cached, origin, limit), cacheHit: true, degraded: false };
+  }
+
+  recordMetric("miss");
+  const fresh = await deps.fetchVenues({ precinct, lat, lng, radiusMeters, limit, now });
+  try {
+    await deps.redis.set(key, fresh, { ex: FEED_CACHE_TTL_SECONDS });
+  } catch (error) {
+    logger.warn("redis unreachable writing feed cache key", { key, error });
+  }
+
+  return { venues: sortByExactDistance(fresh, origin, limit), cacheHit: false, degraded: false };
+}

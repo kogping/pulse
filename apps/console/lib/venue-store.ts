@@ -52,6 +52,21 @@ export interface VenueStore {
   listAll(): Promise<VenueDetailRecord[]>;
 }
 
+// Bumps the Redis feed-cache version for `precinct` after a venue_hours or
+// venue_attributes write commits (see packages/db/src/feed-cache.ts and
+// CLAUDE.md's Redis feed cache spec). Best-effort — a Redis outage here must
+// never fail the curator's save; the console has no Sentry wiring of its own
+// yet, so this logs to console.warn, matching the "log a warning and carry
+// on" contract the cache itself follows.
+async function invalidateFeedCache(precinct: string): Promise<void> {
+  try {
+    const { redis, bumpPrecinctFeedCacheVersion } = await import("@pulse/db");
+    await bumpPrecinctFeedCacheVersion(redis, precinct);
+  } catch (error) {
+    console.warn(`[feed-cache] failed to invalidate precinct "${precinct}"`, error);
+  }
+}
+
 function createDrizzleVenueStore(): VenueStore {
   async function slugTaken(precinct: string, slug: string, excludeVenueId?: string): Promise<boolean> {
     const { db, venues } = await import("@pulse/db");
@@ -120,6 +135,7 @@ function createDrizzleVenueStore(): VenueStore {
         queries.push(db.insert(verificationEvents).values({ venueAttributeId: attributeId, curatorId }));
       }
       await db.batch(queries as [BatchQuery, ...BatchQuery[]]);
+      await invalidateFeedCache(input.precinct);
       return { ok: true, venueId };
     },
 
@@ -127,7 +143,11 @@ function createDrizzleVenueStore(): VenueStore {
       const { db, venues, venueHours, venueAttributes, verificationEvents } = await import("@pulse/db");
       const { eq, sql } = await import("drizzle-orm");
 
-      const existing = await db.select({ id: venues.id }).from(venues).where(eq(venues.id, venueId)).limit(1);
+      const existing = await db
+        .select({ id: venues.id, precinct: venues.precinct })
+        .from(venues)
+        .where(eq(venues.id, venueId))
+        .limit(1);
       if (existing.length === 0) return { ok: false, reason: "not_found" };
       if (await slugTaken(input.precinct, input.slug, venueId)) return { ok: false, reason: "duplicate_slug" };
 
@@ -191,6 +211,8 @@ function createDrizzleVenueStore(): VenueStore {
         queries.push(db.insert(verificationEvents).values({ venueAttributeId: attributeId, curatorId }));
       }
       await db.batch(queries as [BatchQuery, ...BatchQuery[]]);
+      await invalidateFeedCache(input.precinct);
+      if (existing[0]!.precinct !== input.precinct) await invalidateFeedCache(existing[0]!.precinct);
       return { ok: true, venueId };
     },
 
