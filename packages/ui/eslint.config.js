@@ -1,3 +1,3 @@
-const preset = require("@pulse/config/eslint-preset.js");
+import preset from "@pulse/config/eslint-preset.js";
 
-module.exports = [...preset];
+export default [...preset];
