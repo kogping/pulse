@@ -1,0 +1,25 @@
+{
+  "mode": "sydneytrains",
+  "url": "https://api.transport.nsw.gov.au/v1/gtfs/schedule/sydneytrains",
+  "zipBytes": 8953795,
+  "downloadMs": 2456.090375,
+  "unzipMs": 689.226459,
+  "uncompressedBytes": 123459167,
+  "parseMs": 208.22850000000017,
+  "totalMs": 3353.5453340000004,
+  "rowCounts": {
+    "agency.txt": 2,
+    "calendar.txt": 121,
+    "routes.txt": 137,
+    "shapes.txt": 96691,
+    "stop_times.txt": 1214384,
+    "stops.txt": 1214,
+    "trips.txt": 66045,
+    "vehicle_boardings.txt": 15631,
+    "vehicle_categories.txt": 46,
+    "vehicle_couplings.txt": 183
+  },
+  "lastModified": "Mon, 03 Aug 2026 15:01:00 GMT",
+  "contentDisposition": "attachment; filename=sydneytrains_GTFS_PROD_20260803150100.zip",
+  "recordedAt": "2026-08-04T03:24:08.981Z"
+}

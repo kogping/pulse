@@ -1,0 +1,24 @@
+{
+  "mode": "buses",
+  "url": "https://api.transport.nsw.gov.au/v1/gtfs/schedule/buses",
+  "zipBytes": 98237619,
+  "downloadMs": 15854.491582999999,
+  "unzipMs": 3577.860666999999,
+  "uncompressedBytes": 529730406,
+  "parseMs": 1842.0479579999992,
+  "totalMs": 21274.400207999995,
+  "rowCounts": {
+    "agency.txt": 35,
+    "calendar.txt": 230,
+    "calendar_dates.txt": 1120,
+    "notes.txt": 662,
+    "routes.txt": 5903,
+    "shapes.txt": 5158672,
+    "stop_times.txt": 3608872,
+    "stops.txt": 37748,
+    "trips.txt": 92371
+  },
+  "lastModified": "Mon, 03 Aug 2026 10:41:12 GMT",
+  "contentDisposition": "attachment; filename=buses_GTFS_PROD_20260803104100.zip",
+  "recordedAt": "2026-08-04T03:23:50.244Z"
+}
