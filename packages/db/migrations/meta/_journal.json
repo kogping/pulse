@@ -29,6 +29,13 @@
       "when": 1785829763802,
       "tag": "0003_venue_curation_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1785832262698,
+      "tag": "0004_verification_actions",
+      "breakpoints": true
     }
   ]
 }

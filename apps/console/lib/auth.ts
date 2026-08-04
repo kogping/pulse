@@ -101,7 +101,7 @@ const nextAuth: NextAuthResult = NextAuth({
       // SMTP transport is ever constructed. A `server` value is required
       // only to satisfy the provider factory's own validation.
       server: { host: "localhost", port: 25 },
-      from: process.env.AUTH_EMAIL_FROM ?? "Pulse Sydney Console <console@pulse.sydney>",
+      from: process.env.AUTH_EMAIL_FROM ?? "Pulse Sydney Console <send@sanc.au>",
       maxAge: MAGIC_LINK_MAX_AGE_SECONDS,
       async sendVerificationRequest({ identifier, url }) {
         await sendMagicLinkEmail({ to: identifier, url });

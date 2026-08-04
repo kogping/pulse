@@ -27,6 +27,17 @@ export type EventPayloads = {
     reason: string;
   };
   out_of_coverage_email_captured: undefined;
+  // Console-only: fired client-side per queue item on submit, for local
+  // debugging via /debug/events. The durable, cross-curator record of the
+  // same measurement lives in verification_events.duration_ms and is what
+  // the console's /ops dashboard actually aggregates — this event is not
+  // that dashboard's data source (see packages/analytics/src/store.ts: this
+  // package has no server-side sink, browser localStorage only).
+  verification_event: {
+    action: "confirm" | "correct";
+    attributeKey: string;
+    durationMs: number;
+  };
 };
 
 export type EventName = keyof EventPayloads;
