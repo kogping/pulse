@@ -1,0 +1,373 @@
+{
+  "feedName": "buses",
+  "url": "https://api.transport.nsw.gov.au/v1/gtfs/realtime/buses",
+  "minutes": 10,
+  "sampleCount": 36,
+  "avgPayloadBytes": 4969183.888888889,
+  "avgDecodeMs": 52.745280000003746,
+  "observedChangeIntervalsSec": [
+    15.542,
+    15.38,
+    15.529,
+    15.368,
+    15.346,
+    15.655,
+    15.524,
+    15.509,
+    15.367,
+    15.366,
+    15.4,
+    15.374,
+    15.35,
+    15.724,
+    15.436,
+    15.37,
+    15.504,
+    61.471,
+    15.362,
+    15.531,
+    15.586,
+    15.382,
+    15.452,
+    15.389,
+    15.553,
+    15.417,
+    15.431,
+    15.485,
+    15.349,
+    15.439,
+    15.535,
+    15.355,
+    15.38,
+    15.432,
+    15.495
+  ],
+  "medianObservedCadenceSec": 15.432,
+  "samples": [
+    {
+      "t": "2026-08-04T03:23:28.689Z",
+      "payloadBytes": 4921887,
+      "decodeMs": 70.4134170000001,
+      "fetchMs": 513.969291,
+      "entityCount": 3527,
+      "feedTimestamp": 1785813805,
+      "lastModifiedHeader": "Tue, 04 Aug 2026 03:23:26 GMT"
+    },
+    {
+      "t": "2026-08-04T03:23:44.231Z",
+      "payloadBytes": 4915770,
+      "decodeMs": 69.17191699999967,
+      "fetchMs": 470.345209000001,
+      "entityCount": 3515,
+      "feedTimestamp": 1785813820,
+      "lastModifiedHeader": "Tue, 04 Aug 2026 03:23:41 GMT"
+    },
+    {
+      "t": "2026-08-04T03:23:59.611Z",
+      "payloadBytes": 4901797,
+      "decodeMs": 52.70850000000064,
+      "fetchMs": 323.71754099999816,
+      "entityCount": 3508,
+      "feedTimestamp": 1785813835,
+      "lastModifiedHeader": "Tue, 04 Aug 2026 03:23:56 GMT"
+    },
+    {
+      "t": "2026-08-04T03:24:15.140Z",
+      "payloadBytes": 4932388,
+      "decodeMs": 85.68324999999459,
+      "fetchMs": 441.89049999999406,
+      "entityCount": 3532,
+      "feedTimestamp": 1785813850,
+      "lastModifiedHeader": "Tue, 04 Aug 2026 03:24:11 GMT"
+    },
+    {
+      "t": "2026-08-04T03:24:30.508Z",
+      "payloadBytes": 4919889,
+      "decodeMs": 36.247167000001355,
+      "fetchMs": 331.6850420000046,
+      "entityCount": 3516,
+      "feedTimestamp": 1785813865,
+      "lastModifiedHeader": "Tue, 04 Aug 2026 03:24:26 GMT"
+    },
+    {
+      "t": "2026-08-04T03:24:45.854Z",
+      "payloadBytes": 4907758,
+      "decodeMs": 42.910333000007086,
+      "fetchMs": 302.1483339999977,
+      "entityCount": 3512,
+      "feedTimestamp": 1785813880,
+      "lastModifiedHeader": "Tue, 04 Aug 2026 03:24:41 GMT"
+    },
+    {
+      "t": "2026-08-04T03:25:01.509Z",
+      "payloadBytes": 4894570,
+      "decodeMs": 42.559957999998005,
+      "fetchMs": 611.2324579999986,
+      "entityCount": 3506,
+      "feedTimestamp": 1785813895,
+      "lastModifiedHeader": "Tue, 04 Aug 2026 03:24:56 GMT"
+    },
+    {
+      "t": "2026-08-04T03:25:17.033Z",
+      "payloadBytes": 4969942,
+      "decodeMs": 89.32570799998939,
+      "fetchMs": 433.80145800000173,
+      "entityCount": 3567,
+      "feedTimestamp": 1785813910,
+      "lastModifiedHeader": "Tue, 04 Aug 2026 03:25:11 GMT"
+    },
+    {
+      "t": "2026-08-04T03:25:32.542Z",
+      "payloadBytes": 4958425,
+      "decodeMs": 51.49004099999729,
+      "fetchMs": 456.9189170000027,
+      "entityCount": 3556,
+      "feedTimestamp": 1785813930,
+      "lastModifiedHeader": "Tue, 04 Aug 2026 03:25:31 GMT"
+    },
+    {
+      "t": "2026-08-04T03:25:47.909Z",
+      "payloadBytes": 4948273,
+      "decodeMs": 43.70129200001247,
+      "fetchMs": 320.82399999999325,
+      "entityCount": 3548,
+      "feedTimestamp": 1785813945,
+      "lastModifiedHeader": "Tue, 04 Aug 2026 03:25:46 GMT"
+    },
+    {
+      "t": "2026-08-04T03:26:03.275Z",
+      "payloadBytes": 4980487,
+      "decodeMs": 52.4862500000163,
+      "fetchMs": 311.853208000015,
+      "entityCount": 3558,
+      "feedTimestamp": 1785813960,
+      "lastModifiedHeader": "Tue, 04 Aug 2026 03:26:01 GMT"
+    },
+    {
+      "t": "2026-08-04T03:26:18.675Z",
+      "payloadBytes": 4969321,
+      "decodeMs": 47.75095800001873,
+      "fetchMs": 351.84712500000023,
+      "entityCount": 3553,
+      "feedTimestamp": 1785813975,
+      "lastModifiedHeader": "Tue, 04 Aug 2026 03:26:16 GMT"
+    },
+    {
+      "t": "2026-08-04T03:26:34.049Z",
+      "payloadBytes": 4957715,
+      "decodeMs": 49.413000000000466,
+      "fetchMs": 323.7583330000052,
+      "entityCount": 3547,
+      "feedTimestamp": 1785813990,
+      "lastModifiedHeader": "Tue, 04 Aug 2026 03:26:31 GMT"
+    },
+    {
+      "t": "2026-08-04T03:26:49.399Z",
+      "payloadBytes": 4946776,
+      "decodeMs": 42.629332999989856,
+      "fetchMs": 306.2935409999918,
+      "entityCount": 3538,
+      "feedTimestamp": 1785814005,
+      "lastModifiedHeader": "Tue, 04 Aug 2026 03:26:46 GMT"
+    },
+    {
+      "t": "2026-08-04T03:27:05.123Z",
+      "payloadBytes": 4973467,
+      "decodeMs": 45.15450000000419,
+      "fetchMs": 677.8277079999971,
+      "entityCount": 3558,
+      "feedTimestamp": 1785814020,
+      "lastModifiedHeader": "Tue, 04 Aug 2026 03:27:01 GMT"
+    },
+    {
+      "t": "2026-08-04T03:27:20.559Z",
+      "payloadBytes": 4962142,
+      "decodeMs": 76.16379200000665,
+      "fetchMs": 359.5624170000083,
+      "entityCount": 3547,
+      "feedTimestamp": 1785814035,
+      "lastModifiedHeader": "Tue, 04 Aug 2026 03:27:16 GMT"
+    },
+    {
+      "t": "2026-08-04T03:27:35.929Z",
+      "payloadBytes": 4950275,
+      "decodeMs": 37.28658300000825,
+      "fetchMs": 330.27304199998616,
+      "entityCount": 3539,
+      "feedTimestamp": 1785814050,
+      "lastModifiedHeader": "Tue, 04 Aug 2026 03:27:31 GMT"
+    },
+    {
+      "t": "2026-08-04T03:27:51.433Z",
+      "payloadBytes": 4936591,
+      "decodeMs": 45.614625000045635,
+      "fetchMs": 456.55120799998986,
+      "entityCount": 3528,
+      "feedTimestamp": 1785814065,
+      "lastModifiedHeader": "Tue, 04 Aug 2026 03:27:46 GMT"
+    },
+    {
+      "t": "2026-08-04T03:28:52.904Z",
+      "payloadBytes": 4929609,
+      "decodeMs": 75.85358300001826,
+      "fetchMs": 1140.4065829999745,
+      "entityCount": 3518,
+      "feedTimestamp": 1785814125,
+      "lastModifiedHeader": "Tue, 04 Aug 2026 03:28:46 GMT"
+    },
+    {
+      "t": "2026-08-04T03:29:08.266Z",
+      "payloadBytes": 4954473,
+      "decodeMs": 47.89808300003642,
+      "fetchMs": 312.3635409999988,
+      "entityCount": 3533,
+      "feedTimestamp": 1785814140,
+      "lastModifiedHeader": "Tue, 04 Aug 2026 03:29:01 GMT"
+    },
+    {
+      "t": "2026-08-04T03:29:23.797Z",
+      "payloadBytes": 4941999,
+      "decodeMs": 95.39833400002681,
+      "fetchMs": 434.04166699998314,
+      "entityCount": 3522,
+      "feedTimestamp": 1785814160,
+      "lastModifiedHeader": "Tue, 04 Aug 2026 03:29:21 GMT"
+    },
+    {
+      "t": "2026-08-04T03:29:39.383Z",
+      "payloadBytes": 4927703,
+      "decodeMs": 42.48420800000895,
+      "fetchMs": 541.8101669999887,
+      "entityCount": 3517,
+      "feedTimestamp": 1785814175,
+      "lastModifiedHeader": "Tue, 04 Aug 2026 03:29:36 GMT"
+    },
+    {
+      "t": "2026-08-04T03:29:54.765Z",
+      "payloadBytes": 4915322,
+      "decodeMs": 40.35895800002618,
+      "fetchMs": 341.54195799998706,
+      "entityCount": 3510,
+      "feedTimestamp": 1785814190,
+      "lastModifiedHeader": "Tue, 04 Aug 2026 03:29:51 GMT"
+    },
+    {
+      "t": "2026-08-04T03:30:10.217Z",
+      "payloadBytes": 5049162,
+      "decodeMs": 42.748334000003524,
+      "fetchMs": 407.4197919999715,
+      "entityCount": 3618,
+      "feedTimestamp": 1785814205,
+      "lastModifiedHeader": "Tue, 04 Aug 2026 03:30:06 GMT"
+    },
+    {
+      "t": "2026-08-04T03:30:25.606Z",
+      "payloadBytes": 5037393,
+      "decodeMs": 42.65262499998789,
+      "fetchMs": 346.77974999998696,
+      "entityCount": 3608,
+      "feedTimestamp": 1785814220,
+      "lastModifiedHeader": "Tue, 04 Aug 2026 03:30:21 GMT"
+    },
+    {
+      "t": "2026-08-04T03:30:41.159Z",
+      "payloadBytes": 5028154,
+      "decodeMs": 43.04762500000652,
+      "fetchMs": 507.8368330000085,
+      "entityCount": 3604,
+      "feedTimestamp": 1785814235,
+      "lastModifiedHeader": "Tue, 04 Aug 2026 03:30:36 GMT"
+    },
+    {
+      "t": "2026-08-04T03:30:56.576Z",
+      "payloadBytes": 5017877,
+      "decodeMs": 56.14120800001547,
+      "fetchMs": 358.62504200002877,
+      "entityCount": 3596,
+      "feedTimestamp": 1785814250,
+      "lastModifiedHeader": "Tue, 04 Aug 2026 03:30:51 GMT"
+    },
+    {
+      "t": "2026-08-04T03:31:12.007Z",
+      "payloadBytes": 5035167,
+      "decodeMs": 41.976792000001296,
+      "fetchMs": 387.80595800001174,
+      "entityCount": 3615,
+      "feedTimestamp": 1785814265,
+      "lastModifiedHeader": "Tue, 04 Aug 2026 03:31:06 GMT"
+    },
+    {
+      "t": "2026-08-04T03:31:27.492Z",
+      "payloadBytes": 5027441,
+      "decodeMs": 53.66062500001863,
+      "fetchMs": 429.8054159999592,
+      "entityCount": 3610,
+      "feedTimestamp": 1785814280,
+      "lastModifiedHeader": "Tue, 04 Aug 2026 03:31:21 GMT"
+    },
+    {
+      "t": "2026-08-04T03:31:42.841Z",
+      "payloadBytes": 5016116,
+      "decodeMs": 43.46129100001417,
+      "fetchMs": 305.0560420000111,
+      "entityCount": 3604,
+      "feedTimestamp": 1785814295,
+      "lastModifiedHeader": "Tue, 04 Aug 2026 03:31:36 GMT"
+    },
+    {
+      "t": "2026-08-04T03:31:58.280Z",
+      "payloadBytes": 5006667,
+      "decodeMs": 45.09816699998919,
+      "fetchMs": 392.48104199999943,
+      "entityCount": 3595,
+      "feedTimestamp": 1785814310,
+      "lastModifiedHeader": "Tue, 04 Aug 2026 03:31:51 GMT"
+    },
+    {
+      "t": "2026-08-04T03:32:13.815Z",
+      "payloadBytes": 5026338,
+      "decodeMs": 72.21549999993294,
+      "fetchMs": 460.9887500000186,
+      "entityCount": 3612,
+      "feedTimestamp": 1785814325,
+      "lastModifiedHeader": "Tue, 04 Aug 2026 03:32:06 GMT"
+    },
+    {
+      "t": "2026-08-04T03:32:29.170Z",
+      "payloadBytes": 5018684,
+      "decodeMs": 43.755790999974124,
+      "fetchMs": 309.9741250000661,
+      "entityCount": 3607,
+      "feedTimestamp": 1785814340,
+      "lastModifiedHeader": "Tue, 04 Aug 2026 03:32:22 GMT"
+    },
+    {
+      "t": "2026-08-04T03:32:44.550Z",
+      "payloadBytes": 5000981,
+      "decodeMs": 42.04345799994189,
+      "fetchMs": 336.60391700000037,
+      "entityCount": 3597,
+      "feedTimestamp": 1785814360,
+      "lastModifiedHeader": "Tue, 04 Aug 2026 03:32:42 GMT"
+    },
+    {
+      "t": "2026-08-04T03:32:59.982Z",
+      "payloadBytes": 4988366,
+      "decodeMs": 47.21441600006074,
+      "fetchMs": 383.80466700007673,
+      "entityCount": 3590,
+      "feedTimestamp": 1785814375,
+      "lastModifiedHeader": "Tue, 04 Aug 2026 03:32:57 GMT"
+    },
+    {
+      "t": "2026-08-04T03:33:15.477Z",
+      "payloadBytes": 5021695,
+      "decodeMs": 42.11045799998101,
+      "fetchMs": 451.2930410000263,
+      "entityCount": 3614,
+      "feedTimestamp": 1785814390,
+      "lastModifiedHeader": "Tue, 04 Aug 2026 03:33:11 GMT"
+    }
+  ],
+  "recordedAt": "2026-08-04T03:33:30.480Z"
+}
