@@ -15,6 +15,8 @@ export {
 export type { AttributeClass, AttributeConfidenceInput, Confidence, ResolvedVenueAttribute } from "./freshness";
 export { ATTRIBUTE_REGISTRY, ATTRIBUTE_REGISTRY_BY_KEY } from "./attribute-registry";
 export type { AttributeInputType, AttributeRegistryEntry } from "./attribute-registry";
+export { nextQueueBatch } from "./queue";
+export type { QueueAttributeSnapshot, QueueItem } from "./queue";
 export {
   QUALITY_TIERS,
   generateSlug,

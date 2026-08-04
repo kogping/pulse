@@ -15,7 +15,9 @@ import {
   venueHours,
   venueHubLinks,
   venues,
+  verificationEvents,
 } from "../src/schema";
+import { QUALITY_TIERS } from "../src/venue-input";
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -109,12 +111,15 @@ async function main() {
   await db.delete(curators);
 
   console.log("Seeding curators...");
+  // precinctId assigned round-robin across PRECINCTS so the verification
+  // queue (packages/db/src/queue.ts) has a scoped curator to seed against in
+  // preview/local dev, not just via AUTH_TEST_CURATORS in e2e.
   const seededCurators = await db
     .insert(curators)
     .values([
-      { email: "alex@pulse.sydney", name: "Alex Nguyen" },
-      { email: "priya@pulse.sydney", name: "Priya Raman" },
-      { email: "sam@pulse.sydney", name: "Sam O'Connell" },
+      { email: "alex@pulse.sydney", name: "Alex Nguyen", precinctId: PRECINCTS[0]!.name },
+      { email: "priya@pulse.sydney", name: "Priya Raman", precinctId: PRECINCTS[1]!.name },
+      { email: "sam@pulse.sydney", name: "Sam O'Connell", precinctId: PRECINCTS[0]!.name },
     ])
     .returning({ id: curators.id });
 
@@ -169,6 +174,8 @@ async function main() {
           slug: slugify(name, venueCounter),
           address: `${1 + Math.floor(rand() * 200)} ${precinct.name} Rd, ${precinct.name} NSW`,
           location: sql`ST_SetSRID(ST_MakePoint(${lon}, ${lat}), 4326)::geography`,
+          qualityTier: pick([...QUALITY_TIERS]),
+          curatorPitch: `A ${precinct.name} regular for a reason.`,
         })
         .returning({ id: venues.id });
       if (!venue) throw new Error("failed to insert venue");
@@ -204,6 +211,18 @@ async function main() {
       const insertedAttributes = await db.insert(venueAttributes).values(attributeRows).returning({
         id: venueAttributes.id,
       });
+
+      // One confirm event per attribute, backdated to line up with
+      // last_verified_at, and attributed to whoever verified it — so
+      // /ops has real (if synthetic) history to aggregate against.
+      await db.insert(verificationEvents).values(
+        insertedAttributes.map((attribute, idx) => ({
+          venueAttributeId: attribute.id,
+          curatorId: attributeRows[idx]!.verifiedBy,
+          verifiedAt: attributeRows[idx]!.lastVerifiedAt,
+          action: "confirm",
+        })),
+      );
 
       // Flag a handful of attributes to exercise the flag-downgrade path
       // (flag_count >= 1 downgrades fresh -> ageing; >= 2 -> unconfirmed).

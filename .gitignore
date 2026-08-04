@@ -7,6 +7,12 @@ node_modules/
 dist/
 out/
 
+# playwright
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
 # turbo
 .turbo/
 
