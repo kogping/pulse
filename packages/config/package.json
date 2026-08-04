@@ -2,25 +2,29 @@
   "name": "@pulse/config",
   "version": "0.0.0",
   "private": true,
-  "main": "./index.js",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "files": [
+    "dist",
     "base.json",
     "nextjs.json",
     "eslint-preset.js",
     "tailwind-preset.js"
   ],
   "scripts": {
-    "build": "echo \"@pulse/config: no build step (presets only)\"",
-    "lint": "echo \"@pulse/config: nothing to lint\"",
-    "typecheck": "echo \"@pulse/config: nothing to typecheck\"",
-    "test": "echo \"@pulse/config: no tests\""
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@eslint/js": "^9.17.0",
+    "@vercel/edge-config": "^1.5.0",
     "eslint": "^9.17.0",
     "typescript-eslint": "^8.18.0"
   },
   "devDependencies": {
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
   }
 }

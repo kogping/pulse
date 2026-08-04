@@ -96,6 +96,29 @@ region isn't `syd1` or p75 exceeds 250ms.
    (`@pulse/analytics`'s `scrubPii`), not by Sentry project config — nothing
    to set up here beyond the DSN/token above.
 
+## Vercel Edge Config (feature flags / kill switches)
+
+1. https://vercel.com/<team> → **Storage** → **Create Database** → **Edge
+   Config**.
+2. Name: `pulse-sydney-flags`. One store, shared by both `pulse-web` and
+   `pulse-console` — flags aren't per-app secrets, and both apps need to
+   agree on the same value for a given key.
+3. **Connect** the store to both `pulse-web` and `pulse-console` projects
+   (Storage tab on each project → **Connect Store**). This automatically
+   sets the `EDGE_CONFIG` environment variable (a connection string, not a
+   secret to hand-copy) on each project — Production + Preview.
+4. Seed the initial items (Storage → the store → **Items**):
+   - `map_enabled` → `true`
+   - `transport_live_enabled` → `false`
+   - `accessibility_filter_enabled` → `false`
+   - `precinct_<id>_enabled` → `true` for each precinct actually launched
+   No item is required for a flag to work — `packages/config`'s `getFlag()`
+   falls back to a safe in-code default (see
+   [docs/runbook/kill-switches.md](../runbook/kill-switches.md)) for any key
+   that isn't set, so this step is about matching intent, not correctness.
+5. See [docs/runbook/kill-switches.md](../runbook/kill-switches.md) for what
+   each flag does and how to flip one in an emergency.
+
 ## Vercel Deployment Protection on `pulse-console`
 
 Also done via dashboard, no CLI credentials available here:
