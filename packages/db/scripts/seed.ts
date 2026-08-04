@@ -120,6 +120,9 @@ async function main() {
       { email: "alex@pulse.sydney", name: "Alex Nguyen", precinctId: PRECINCTS[0]!.name },
       { email: "priya@pulse.sydney", name: "Priya Raman", precinctId: PRECINCTS[1]!.name },
       { email: "sam@pulse.sydney", name: "Sam O'Connell", precinctId: PRECINCTS[0]!.name },
+      // Reviewer access for PR previews (docs/gates/curator-queue-week5.md
+      // needs a real human clicking through /queue, not just Playwright).
+      { email: "iijoshaus@gmail.com", name: "Josh", precinctId: PRECINCTS[0]!.name },
     ])
     .returning({ id: curators.id });
 
