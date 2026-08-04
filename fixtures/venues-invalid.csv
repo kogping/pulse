@@ -1,0 +1,7 @@
+name,precinct,slug,address,lat,lng,quality_tier,curator_pitch,hours_sun,hours_mon,hours_tue,hours_wed,hours_thu,hours_fri,hours_sat,attributes
+Neon Yard,Newtown,Neon-Yard,"5 Australia St, Newtown NSW",-33.8964,151.1789,solid,"Rooftop bar, low key on weeknights.",closed,closed,18:00-23:00,18:00-23:00,18:00-23:00,17:00-01:00,17:00-01:00,crowd_level=quiet
+Golden Lounge,,golden-lounge,"10 Bayswater Rd, Kings Cross NSW",-33.8751,151.2221,flagship,"The room everyone name-drops.",closed,closed,18:00-23:00,18:00-23:00,18:00-23:00,17:00-02:00,17:00-02:00,price_tier=$$
+Backstreet Den,Kings Cross,backstreet-den,"21 Ward Ave, Kings Cross NSW",-33.8746,151.2229,premium,"Speakeasy vibe, no sign out front.",closed,closed,18:00-23:00,18:00-23:00,18:00-23:00,17:00-02:00,17:00-02:00,
+Southside Hall,Newtown,southside-hall,"77 Missenden Rd, Newtown NSW",-33.8944,151.1799,solid,"Big room, good for groups.",closed,closed,closed,18:00-23:00,18:00-23:00,5pm-late,17:00-02:00,crowd_level=busy
+Old Vault,Newtown,old-vault,"3 Wilson St, Newtown NSW",-33.8981,151.1774,hidden_gem,"Wine bar in a converted bank vault.",closed,closed,18:00-23:00,18:00-23:00,18:00-23:00,17:00-01:00,17:00-01:00,parking=yes
+Velvet Terrace,Kings Cross,velvet-terrace,"15 Elizabeth Bay Rd, Kings Cross NSW",-33.8722,,solid,"Terrace views, easy to find.",closed,closed,18:00-23:00,18:00-23:00,18:00-23:00,17:00-02:00,17:00-02:00,"outdoor_area=yes - terrace"
