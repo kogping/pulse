@@ -58,12 +58,12 @@ jobs:
       - name: Apply migrations to preview branch
         run: pnpm --filter @pulse/db db:migrate
         env:
-          DATABASE_URL: ${{ steps.create-branch.outputs.db_url_pooled }}
+          DATABASE_URL: ${{ steps.create-branch.outputs.db_url_with_pooler }}
 
       - name: Seed preview branch
         run: pnpm --filter @pulse/db db:seed
         env:
-          DATABASE_URL: ${{ steps.create-branch.outputs.db_url_pooled }}
+          DATABASE_URL: ${{ steps.create-branch.outputs.db_url_with_pooler }}
 
       # Vercel scopes an env var to a specific PR's Preview deployments via
       # `target: ["preview"]` + `gitBranch: <head ref>` — this is the same
@@ -74,7 +74,7 @@ jobs:
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_TEAM_ID: ${{ secrets.VERCEL_ORG_ID }}
-          DATABASE_URL: ${{ steps.create-branch.outputs.db_url_pooled }}
+          DATABASE_URL: ${{ steps.create-branch.outputs.db_url_with_pooler }}
           GIT_BRANCH: ${{ github.event.pull_request.head.ref }}
         run: |
           set -euo pipefail
