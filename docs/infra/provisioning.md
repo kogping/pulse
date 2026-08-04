@@ -65,6 +65,37 @@ deployed URL to get a repeatable p50/p75/p95 baseline (see
 [docs/baselines](../baselines)) — it fails the build/CI step if the reported
 region isn't `syd1` or p75 exceeds 250ms.
 
+## Sentry (error tracking, both apps)
+
+1. https://sentry.io → create (or reuse) an org, then two projects:
+   `pulse-web` and `pulse-console` (platform: Next.js).
+2. Each project's **Client Keys (DSN)** page has the DSN. Add to both Vercel
+   projects' environment variables (Production + Preview, so `vercel pull`
+   in `staging-deploy.yml` and Vercel's own git-integration production build
+   both pick them up — same placement rationale as `DATABASE_URL` above):
+   - `SENTRY_DSN` — server/edge init (`sentry.server.config.ts`,
+     `sentry.edge.config.ts`)
+   - `NEXT_PUBLIC_SENTRY_DSN` — client init (`sentry.client.config.ts`),
+     exposed to the browser bundle by design (DSNs are not secret)
+3. Settings → **Auth Tokens** → create a token scoped to `project:releases`
+   and `project:write` for source map upload. Add as `SENTRY_AUTH_TOKEN` to
+   both Vercel projects' environment variables. Also add `SENTRY_ORG` (the
+   org slug) and `SENTRY_PROJECT` (`pulse-web` / `pulse-console`
+   respectively — different value per Vercel project, same var name).
+4. `SENTRY_AUTH_TOKEN` gates the `@sentry/nextjs` webpack plugin
+   (`withSentryConfig` in each app's `next.config.mjs`): present → uploads
+   source maps and tags the release; absent (local dev, CI's `pnpm build`
+   step, forked PRs) → the build still succeeds, it just skips upload
+   (`silent: true`).
+5. Release tagging uses `VERCEL_GIT_COMMIT_SHA` /
+   `NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA`, which Vercel injects automatically
+   when "Automatically expose System Environment Variables" is enabled on
+   each project (Settings → Environment Variables) — no extra var to set.
+6. PII scrubbing (`beforeSend`/`beforeBreadcrumb`, CLAUDE.md: no
+   coordinates, no email in breadcrumbs) is enforced in code
+   (`@pulse/analytics`'s `scrubPii`), not by Sentry project config — nothing
+   to set up here beyond the DSN/token above.
+
 ## Vercel Deployment Protection on `pulse-console`
 
 Also done via dashboard, no CLI credentials available here:
