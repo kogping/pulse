@@ -20,6 +20,12 @@ export default defineConfig({
     url: BASE_URL,
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,
+    env: {
+      // Lets /api/feed honour a `_testNow` override (see that route and
+      // feed-2am.spec.ts) so the "simulated 2:15am" e2e run doesn't have
+      // to wait for real clock time. Never set outside this test process.
+      FEED_TEST_MODE: "1",
+    },
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
 });
