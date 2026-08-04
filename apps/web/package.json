@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@pulse/analytics": "workspace:*",
+    "@pulse/config": "workspace:*",
     "@pulse/db": "workspace:*",
     "@pulse/ui": "workspace:*",
     "@sentry/nextjs": "^10.69.0",
@@ -23,7 +24,6 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
-    "@pulse/config": "workspace:*",
     "@types/node": "^22.10.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
