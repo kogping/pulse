@@ -1,0 +1,28 @@
+{
+  "colors": {
+    "ink": {
+      "950": "#0b0d10",
+      "900": "#12161b",
+      "700": "#2a323b",
+      "500": "#5b6672",
+      "300": "#a7b0b9",
+      "100": "#e7eaed",
+      "50": "#f6f7f8"
+    },
+    "fresh": { "DEFAULT": "#1c8a5c", "subtle": "#e3f6ec" },
+    "ageing": { "DEFAULT": "#b3790a", "subtle": "#fbf0da" },
+    "unconfirmed": { "DEFAULT": "#8a1c2e", "subtle": "#f8e3e6" },
+    "accent": { "DEFAULT": "#3a5ef5", "subtle": "#e7ecfe" }
+  },
+  "fontSize": {
+    "xs": ["0.75rem", { "lineHeight": "1rem" }],
+    "sm": ["0.875rem", { "lineHeight": "1.25rem" }],
+    "base": ["1rem", { "lineHeight": "1.5rem" }],
+    "lg": ["1.125rem", { "lineHeight": "1.75rem" }],
+    "xl": ["1.25rem", { "lineHeight": "1.75rem" }],
+    "2xl": ["1.5rem", { "lineHeight": "2rem" }],
+    "3xl": ["1.875rem", { "lineHeight": "2.25rem" }],
+    "display": ["2.5rem", { "lineHeight": "2.75rem" }]
+  },
+  "spacingScale": ["0", "1", "2", "3", "4", "5", "6", "8", "10", "12", "16", "20", "24"]
+}
