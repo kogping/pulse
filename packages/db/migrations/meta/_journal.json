@@ -43,6 +43,13 @@
       "when": 1785840924804,
       "tag": "0005_attribution_coi",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1785848717881,
+      "tag": "0006_audit_samples",
+      "breakpoints": true
     }
   ]
 }

@@ -35,3 +35,12 @@ export {
 } from "./coi";
 export type { DecidePendingEditResult, EditRequest, PendingEditRecord } from "./coi";
 export { resolvePublicAttribute } from "./public-attributes";
+export {
+  listPendingAuditSamples,
+  pickWeightedSample,
+  recordAuditVerdict,
+  sampleAuditBatch,
+  selectAuditSample,
+  weeklyAuditAccuracy,
+} from "./audit";
+export type { AuditCandidateRow, PendingAuditItem, SampledAuditItem, WeeklyAccuracy } from "./audit";
