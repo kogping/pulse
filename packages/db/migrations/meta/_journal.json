@@ -15,6 +15,13 @@
       "when": 1785778700000,
       "tag": "0001_attribute_confidence",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785825828705,
+      "tag": "0002_curator_auth",
+      "breakpoints": true
     }
   ]
 }
