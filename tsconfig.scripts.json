@@ -1,0 +1,11 @@
+{
+  "extends": "@pulse/config/base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "types": ["node"]
+  },
+  "include": ["scripts"],
+  "exclude": ["node_modules", "scripts/spike"]
+}

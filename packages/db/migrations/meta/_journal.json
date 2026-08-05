@@ -57,6 +57,13 @@
       "when": 1785866007804,
       "tag": "0007_cool_tiger_shark",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1785930110494,
+      "tag": "0008_complex_vulcan",
+      "breakpoints": true
     }
   ]
 }

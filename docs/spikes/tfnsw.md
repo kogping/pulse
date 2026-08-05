@@ -125,3 +125,19 @@ Static bundles refresh once/day per TfNSW; pulling all 7 mode bundles in a
 GitHub Action on a daily cron and diffing into Postgres is well within
 runner limits (§4) and matches invariant #4 (migrations/data loads run from
 GitHub Actions, never a Vercel build step).
+
+## 7. F3.3 weekly static import — built, one known gap
+
+`scripts/gtfs-import.ts` (`.github/workflows/gtfs-import.yml`) implements the
+weekly fallback timetable import against the six precinct-relevant bundles
+from §5 (all but `nswtrains`, which serves no launch precinct hub).
+
+**Known limitation: `calendar_dates.txt` is not consumed.** GTFS services'
+weekly recurrence comes from `calendar.txt` only; date-specific exceptions
+(a public holiday running a Sunday timetable, a one-off service addition or
+cancellation) are out of scope for this pass. In practice this means a
+public holiday will show the ordinary weekday timetable — not a "confident
+wrong number" in the invariant #5 sense (it's a real, currently-scheduled
+service, just not exception-adjusted), but a real honesty gap worth closing
+before launch if any of the covered precincts see meaningfully different
+public-holiday service. Tracked as follow-up, not silently absorbed.

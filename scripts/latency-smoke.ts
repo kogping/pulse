@@ -25,7 +25,7 @@ interface LatencyResponse {
 
 function percentile(sorted: number[], p: number): number {
   const idx = Math.ceil((p / 100) * sorted.length) - 1;
-  return sorted[Math.min(Math.max(idx, 0), sorted.length - 1)];
+  return sorted[Math.min(Math.max(idx, 0), sorted.length - 1)]!;
 }
 
 async function main() {
@@ -42,7 +42,10 @@ async function main() {
 
   for (let i = 0; i < N; i++) {
     const start = performance.now();
-    const res = await fetch(endpoint, { cache: "no-store" });
+    // Node's fetch (undici) has no `cache` option to opt out of — unlike
+    // browser fetch, it never caches GETs itself, so there's nothing to
+    // disable here.
+    const res = await fetch(endpoint);
     const elapsed = performance.now() - start;
 
     if (!res.ok) {

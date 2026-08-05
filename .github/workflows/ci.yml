@@ -32,11 +32,23 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      # Root scripts/ (e.g. scripts/gtfs-import.ts) aren't a turbo workspace
+      # package, so they're typechecked/tested separately here. They import
+      # from @pulse/db's built dist, same as scripts/audit-sample.ts.
+      - name: Build @pulse/db
+        run: pnpm --filter @pulse/db build
+
+      - name: Typecheck root scripts
+        run: pnpm typecheck:scripts
+
       - name: Lint
         run: pnpm lint
 
       - name: Test
         run: pnpm test
+
+      - name: Test root scripts
+        run: pnpm test:scripts
 
       - name: Build
         run: pnpm build

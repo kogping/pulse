@@ -14,16 +14,26 @@
     "latency:smoke": "tsx scripts/latency-smoke.ts",
     "spike:gtfs-probe": "tsx scripts/spike/gtfs-probe.ts",
     "audit:sample": "tsx scripts/audit-sample.ts",
-    "import:venues": "tsx scripts/import-venues.ts"
+    "import:venues": "tsx scripts/import-venues.ts",
+    "gtfs:import": "tsx scripts/gtfs-import.ts",
+    "typecheck:scripts": "tsc -p tsconfig.scripts.json",
+    "test:scripts": "vitest run --config vitest.scripts.config.ts"
   },
   "devDependencies": {
+    "@pulse/config": "workspace:*",
     "turbo": "^2.3.0",
     "tsx": "^4.23.5",
     "typescript": "^5.7.0",
-    "gtfs-realtime-bindings": "^2.2.0"
+    "gtfs-realtime-bindings": "^2.2.0",
+    "@types/node": "^22.10.0",
+    "@types/pg": "^8.11.10",
+    "@sentry/node": "^10.69.0",
+    "vitest": "^2.1.0"
   },
   "dependencies": {
+    "@pulse/analytics": "workspace:*",
     "@pulse/db": "workspace:*",
-    "drizzle-orm": "^0.45.2"
+    "drizzle-orm": "^0.45.2",
+    "pg": "^8.13.1"
   }
 }
