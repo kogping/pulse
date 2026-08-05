@@ -1,6 +1,8 @@
 import { ATTRIBUTE_REGISTRY_BY_KEY, type AttributeView } from "@pulse/db";
+import { FlagControl } from "./flag-control";
 
 export interface VenueAttributeCardProps {
+  venueId: string;
   attributes: AttributeView[];
 }
 
@@ -22,7 +24,7 @@ function labelFor(key: string): string {
 // unconfirmed shows neither the value nor any provenance line — "Not
 // confirmed" and nothing else. There is no branch here that reads `.value`
 // off an unconfirmed attribute (CLAUDE.md invariant #3).
-export function VenueAttributeCard({ attributes }: VenueAttributeCardProps) {
+export function VenueAttributeCard({ venueId, attributes }: VenueAttributeCardProps) {
   if (attributes.length === 0) return null;
 
   return (
@@ -51,6 +53,7 @@ export function VenueAttributeCard({ attributes }: VenueAttributeCardProps) {
               {attribute.value}
             </dd>
             <p className="text-xs text-ink-400">{provenance}</p>
+            <FlagControl venueId={venueId} attributeKey={attribute.key} />
           </div>
         );
       })}
