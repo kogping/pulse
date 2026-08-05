@@ -85,3 +85,13 @@ export { recordOutOfCoverageSignup } from "./out-of-coverage";
 export type { RecordOutOfCoverageSignupInput } from "./out-of-coverage";
 export { insertCorrectionFlag } from "./correction-flags";
 export type { InsertCorrectionFlagInput, InsertCorrectionFlagResult } from "./correction-flags";
+export {
+  HUB_SEARCH_RADIUS_METERS,
+  MAX_HUBS_PER_VENUE,
+  computeVenueHubLinks,
+  findNearestHubCandidates,
+  linkVenueToNearestHubs,
+} from "./hub-links";
+export type { HubCandidate, HubLinkResult } from "./hub-links";
+export { mapboxWalkingClient } from "./mapbox";
+export type { LatLng, WalkingDirectionsClient } from "./mapbox";
