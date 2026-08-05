@@ -90,8 +90,12 @@ export {
   MAX_HUBS_PER_VENUE,
   computeVenueHubLinks,
   findNearestHubCandidates,
+  getPrimaryHubForVenue,
+  getTransitHubById,
   linkVenueToNearestHubs,
 } from "./hub-links";
-export type { HubCandidate, HubLinkResult } from "./hub-links";
+export type { HubCandidate, HubLinkResult, PrimaryHubForVenue, TransitHubSummary } from "./hub-links";
 export { mapboxWalkingClient } from "./mapbox";
 export type { LatLng, WalkingDirectionsClient } from "./mapbox";
+export { getScheduledTransportForHub, resolveScheduledTransportState } from "./scheduled-transport";
+export type { ScheduledDeparture, ScheduledDepartureRow, ScheduledTransportState } from "./scheduled-transport";

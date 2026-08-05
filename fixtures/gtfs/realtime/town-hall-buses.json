@@ -1,0 +1,10 @@
+{
+  "description": "Town Hall bus stop trip updates — synthetic, see README.md",
+  "capturedAtEpochSeconds": 1770202800,
+  "hubStopId": "2000338",
+  "groundTruthMinutesUntilDeparture": 11,
+  "entities": [
+    { "id": "trip-1", "routeId": "333", "stopId": "2000338", "departureEpochSeconds": 1770203460 },
+    { "id": "trip-2", "routeId": "380", "stopId": "2000339", "departureEpochSeconds": 1770202920 }
+  ]
+}

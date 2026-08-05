@@ -1,6 +1,7 @@
-import { eq, sql as drizzleSql } from "drizzle-orm";
+import { and, eq, sql as drizzleSql } from "drizzle-orm";
 import { db } from "./client";
 import { venueHubLinks } from "./schema/venue-hub-links";
+import { transitHubs } from "./schema/transit-hubs";
 import { mapboxWalkingClient, type LatLng, type WalkingDirectionsClient } from "./mapbox";
 
 export const HUB_SEARCH_RADIUS_METERS = 1500;
@@ -150,4 +151,54 @@ export async function linkVenueToNearestHubs(
   }
 
   return links;
+}
+
+export interface PrimaryHubForVenue {
+  hubId: string;
+  hubName: string;
+  gtfsStopId: string | null;
+  walkSeconds: number;
+}
+
+// F3's read path: the one hub a venue's transport slot renders (F2/F3
+// invariant — a venue shows exactly one countdown, not a list of every
+// nearby hub). A venue with no linked hubs (never onboarded, or the
+// onboarding-time search in findNearestHubCandidates found nothing in
+// range) returns null, and the transport slot renders nothing rather than
+// a broken state.
+export async function getPrimaryHubForVenue(venueId: string): Promise<PrimaryHubForVenue | null> {
+  const [row] = await db
+    .select({
+      hubId: transitHubs.id,
+      hubName: transitHubs.name,
+      gtfsStopId: transitHubs.gtfsStopId,
+      walkSeconds: venueHubLinks.walkSeconds,
+    })
+    .from(venueHubLinks)
+    .innerJoin(transitHubs, eq(transitHubs.id, venueHubLinks.transitHubId))
+    .where(and(eq(venueHubLinks.venueId, venueId), eq(venueHubLinks.isPrimary, true)))
+    .limit(1);
+
+  return row ?? null;
+}
+
+export interface TransitHubSummary {
+  id: string;
+  name: string;
+  mode: string;
+  gtfsStopId: string | null;
+}
+
+// F3's route handler needs the hub's mode (to pick a GTFS-R feed) and
+// gtfs_stop_id (to filter that feed's trip updates) — both live on
+// transit_hubs, looked up independently of any venue since GET
+// /api/transport/[hubId] is keyed by hub, not venue.
+export async function getTransitHubById(hubId: string): Promise<TransitHubSummary | null> {
+  const [row] = await db
+    .select({ id: transitHubs.id, name: transitHubs.name, mode: transitHubs.mode, gtfsStopId: transitHubs.gtfsStopId })
+    .from(transitHubs)
+    .where(eq(transitHubs.id, hubId))
+    .limit(1);
+
+  return row ?? null;
 }

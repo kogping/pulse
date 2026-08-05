@@ -1,0 +1,11 @@
+{
+  "description": "Central platform trip updates, T1 line — synthetic, see README.md",
+  "capturedAtEpochSeconds": 1770199200,
+  "hubStopId": "200060",
+  "groundTruthMinutesUntilDeparture": 3,
+  "entities": [
+    { "id": "trip-1", "routeId": "T1", "stopId": "200060", "departureEpochSeconds": 1770199385 },
+    { "id": "trip-2", "routeId": "T4", "stopId": "200070", "departureEpochSeconds": 1770199260 },
+    { "id": "trip-3", "routeId": "T1", "stopId": "200060", "departureEpochSeconds": 1770199920 }
+  ]
+}

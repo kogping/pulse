@@ -36,7 +36,7 @@ export default async function VenuePage({ params, searchParams }: VenuePageProps
 
       <DirectionsLink name={venue.name} lat={venue.lat} lng={venue.lng} />
 
-      <TransportSlot />
+      <TransportSlot venueId={venue.id} />
 
       <VenueAnalytics venueId={venue.id} position={position} source={source} />
     </main>
