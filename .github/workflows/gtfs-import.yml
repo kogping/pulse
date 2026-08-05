@@ -1,0 +1,88 @@
+name: GTFS static import
+
+# F3.3: the weekly static timetable import. This is the fallback shown
+# whenever live TfNSW data is missing, stale, or errored (invariant:
+# degrade honestly — "scheduled, not live", never a guessed countdown), so
+# it must stay current independently of the live feed poller. See
+# scripts/gtfs-import.ts and docs/spikes/tfnsw.md.
+#
+# Connects to Neon directly — NOT run from a Vercel build step (invariant:
+# migrations/data loads run from GitHub Actions only).
+on:
+  schedule:
+    - cron: "0 16 * * 0" # weekly import, 02:00 Sydney Monday (AEDT, UTC+11) — see docs/runbook for DST handling
+    - cron: "0 17 * * *" # daily staleness check, 03:00/04:00 Sydney
+  workflow_dispatch: {}
+
+concurrency:
+  group: gtfs-import
+  cancel-in-progress: false
+
+jobs:
+  import:
+    name: import static timetable
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 16 * * 0'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build @pulse/db
+        run: pnpm --filter @pulse/db build
+
+      - name: Import
+        run: pnpm gtfs:import
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          TFNSW_API_KEY: ${{ secrets.TFNSW_API_KEY }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+
+      # A green weekly run also proves freshness, not just success.
+      - name: Check staleness
+        run: pnpm gtfs:import --check-staleness
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+
+  check-staleness:
+    name: check staleness
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 17 * * *'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build @pulse/db
+        run: pnpm --filter @pulse/db build
+
+      - name: Check staleness
+        run: pnpm gtfs:import --check-staleness
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
