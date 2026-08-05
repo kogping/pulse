@@ -1,4 +1,4 @@
-import { getEnv } from "./env";
+import { getMapboxEnv } from "./env";
 import { redis } from "./redis";
 
 export interface LatLng {
@@ -40,7 +40,7 @@ function createMapboxWalkingClient(): WalkingDirectionsClient {
       const cached = await redis.get<number>(key);
       if (typeof cached === "number") return cached;
 
-      const token = getEnv().MAPBOX_TOKEN;
+      const token = getMapboxEnv().MAPBOX_TOKEN;
       const url =
         `https://api.mapbox.com/directions/v5/mapbox/walking/` +
         `${from.lng},${from.lat};${to.lng},${to.lat}` +

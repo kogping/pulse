@@ -1,7 +1,7 @@
 export const PACKAGE_NAME = "@pulse/db";
 
-export { getEnv } from "./env";
-export type { Env } from "./env";
+export { getDatabaseEnv, getEnv, getMapboxEnv, getUpstashEnv } from "./env";
+export type { DatabaseEnv, Env, MapboxEnv, UpstashEnv } from "./env";
 export { db, sql } from "./client";
 export { redis } from "./redis";
 export * from "./schema";
