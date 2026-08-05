@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { track } from "@pulse/analytics";
 
 export interface DirectionsLinkProps {
@@ -25,7 +26,19 @@ export function directionsHref(name: string, lat: number, lng: number, userAgent
 }
 
 export function DirectionsLink({ name, lat, lng }: DirectionsLinkProps) {
-  const userAgent = typeof navigator === "undefined" ? "" : navigator.userAgent;
+  // Start at the SSR default ("", which resolves to the Google Maps branch
+  // below) and only read the real navigator.userAgent after mount. Server
+  // and client render identically at hydration time this way — React
+  // doesn't patch a mismatched attribute on hydration (it just logs a
+  // warning and keeps whatever the server sent), so computing this
+  // directly from navigator.userAgent during render permanently stuck
+  // real iOS visitors with the Google Maps link. The effect's setState
+  // forces a genuine post-hydration re-render instead, which does update
+  // the DOM.
+  const [userAgent, setUserAgent] = useState("");
+  useEffect(() => {
+    setUserAgent(navigator.userAgent);
+  }, []);
   const href = directionsHref(name, lat, lng, userAgent);
 
   return (
