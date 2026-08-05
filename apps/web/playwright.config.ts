@@ -27,8 +27,15 @@ export default defineConfig({
         // Lets /api/feed honour a `_testNow` override (see that route and
         // feed-2am.spec.ts) so the "simulated 2:15am" e2e run doesn't have
         // to wait for real clock time. Never set outside this test process.
-        // Also gates /api/test/flag-count (flag-roundtrip.spec.ts).
+        // Also gates /api/test/flag-count (flag-roundtrip.spec.ts) and
+        // page.tsx's own `_testNow`/`_mapEnabled` overrides (map.spec.ts).
         FEED_TEST_MODE: "1",
+        // F1.5: inlined into the client bundle at this build (NEXT_PUBLIC_
+        // vars are compile-time). Not a real Mapbox account — map.spec.ts
+        // only asserts marker DOM presence, which mapbox-gl computes from
+        // the map's projection synchronously on construction, before any
+        // network request to Mapbox's API would even resolve.
+        NEXT_PUBLIC_MAPBOX_TOKEN: "pk.e2e-test-token-not-a-real-mapbox-account",
       },
     },
     {

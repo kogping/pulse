@@ -69,6 +69,10 @@ export interface FeedCacheDeps {
 
 export interface FeedCacheResult {
   venues: VenueCardData[];
+  /** Same venue ids as `venues`, keyed to raw coordinates — the one place
+   *  outside the cache layer that gets to see them, for the F1.5 map pin
+   *  view. Never persisted past this response. */
+  locations: Record<string, { lat: number; lng: number }>;
   /** True if a cached result was reused instead of querying Postgres. */
   cacheHit: boolean;
   /** True if Redis was unreachable and the request fell straight through to Postgres. */
@@ -105,14 +109,43 @@ function buildFeedCacheKey(params: { precinct: string; geohash5: string; bucket:
   return `feed:${params.precinct}:${params.geohash5}:${params.bucket}:${params.filterHash}:v${params.version}`;
 }
 
-function sortByExactDistance(entries: FeedCacheVenue[], origin: { lat: number; lng: number }, limit: number): VenueCardData[] {
+// Upstash's REST client round-trips cached values through JSON, which
+// turns every AttributeView's `lastVerifiedAt` Date into a plain string —
+// silently, since VenueCardData's TS type still claims it's a Date. Left
+// unrevived, that string reaches Badge (packages/ui), which calls
+// `.getTime()` on it and throws. Only a cache *hit* goes through JSON at
+// all — a cache miss returns Postgres's real Date objects untouched — so
+// this only needs to run on the read side.
+function reviveCachedVenues(entries: FeedCacheVenue[]): FeedCacheVenue[] {
+  return entries.map((entry) => ({
+    ...entry,
+    venue: {
+      ...entry.venue,
+      attributes: entry.venue.attributes.map((attribute) =>
+        attribute.confidence === "unconfirmed" ? attribute : { ...attribute, lastVerifiedAt: new Date(attribute.lastVerifiedAt) },
+      ),
+    },
+  }));
+}
+
+function sortByExactDistance(entries: FeedCacheVenue[], origin: { lat: number; lng: number }, limit: number): FeedCacheVenue[] {
   return [...entries]
     .sort(
       (a, b) =>
         haversineDistanceMeters(origin, { lat: a.lat, lng: a.lng }) - haversineDistanceMeters(origin, { lat: b.lat, lng: b.lng }),
     )
-    .slice(0, limit)
-    .map((entry) => entry.venue);
+    .slice(0, limit);
+}
+
+function toResult(
+  sorted: FeedCacheVenue[],
+  extra: { cacheHit: boolean; degraded: boolean },
+): FeedCacheResult {
+  return {
+    venues: sorted.map((entry) => entry.venue),
+    locations: Object.fromEntries(sorted.map((entry) => [entry.venue.id, { lat: entry.lat, lng: entry.lng }])),
+    ...extra,
+  };
 }
 
 // Cache read/write failures fall through to Postgres, never a 500 — see
@@ -136,7 +169,7 @@ export async function getFeedWithCache(params: FeedCacheParams, deps: FeedCacheD
   if (version === null) {
     recordMetric("degraded");
     const fresh = await deps.fetchVenues({ precinct, lat, lng, radiusMeters, limit, now, filters });
-    return { venues: sortByExactDistance(fresh, origin, limit), cacheHit: false, degraded: true };
+    return toResult(sortByExactDistance(fresh, origin, limit), { cacheHit: false, degraded: true });
   }
 
   const geohash5 = geohashEncode(lat, lng, FEED_CACHE_GEOHASH_PRECISION);
@@ -153,7 +186,7 @@ export async function getFeedWithCache(params: FeedCacheParams, deps: FeedCacheD
 
   if (cached) {
     recordMetric("hit");
-    return { venues: sortByExactDistance(cached, origin, limit), cacheHit: true, degraded: false };
+    return toResult(sortByExactDistance(reviveCachedVenues(cached), origin, limit), { cacheHit: true, degraded: false });
   }
 
   recordMetric("miss");
@@ -164,5 +197,5 @@ export async function getFeedWithCache(params: FeedCacheParams, deps: FeedCacheD
     logger.warn("redis unreachable writing feed cache key", { key, error });
   }
 
-  return { venues: sortByExactDistance(fresh, origin, limit), cacheHit: false, degraded: false };
+  return toResult(sortByExactDistance(fresh, origin, limit), { cacheHit: false, degraded: false });
 }

@@ -10,7 +10,8 @@ import {
 } from "@pulse/db";
 import { getFlag } from "@pulse/config";
 import { FeedAnalytics } from "./feed/feed-analytics";
-import { loadFeed } from "./feed/load-feed";
+import { ListMapToggle } from "./feed/list-map-toggle";
+import { loadFeed, type LoadFeedResult } from "./feed/load-feed";
 import { LocationGate } from "./location/location-gate";
 import { PrecinctSwitcher } from "./location/precinct-switcher";
 
@@ -36,6 +37,33 @@ function venueCardProps(venue: VenueCardData) {
         ? { mode: "scheduled" as const, label: `Last entry ${lastEntry.value}` }
         : undefined,
   };
+}
+
+// F1.5: the main feed's venues, as either a plain list or list+map, gated
+// entirely on map_enabled — when the flag is off the toggle control (and
+// mapbox-gl, via list-map-toggle.tsx's dynamic import) never renders at
+// all, not merely a disabled button.
+function renderVenueList(relaxation: LoadFeedResult, mapEnabled: boolean) {
+  const list = (
+    <div className="flex flex-col gap-4">
+      {relaxation.venues.map((venue, index) => (
+        <Link key={venue.id} href={`/venue/${venue.id}?position=${index}&source=feed`}>
+          <VenueCard {...venueCardProps(venue)} />
+        </Link>
+      ))}
+    </div>
+  );
+
+  if (!mapEnabled) return list;
+
+  const pins = relaxation.venues
+    .map((venue) => {
+      const location = relaxation.venueLocations[venue.id];
+      return location ? { id: venue.id, name: venue.name, lat: location.lat, lng: location.lng } : null;
+    })
+    .filter((pin) => pin !== null);
+
+  return <ListMapToggle pins={pins}>{list}</ListMapToggle>;
 }
 
 // F1.6: the active set lives in the URL (as a comma-separated `filters`
@@ -83,10 +111,27 @@ export default async function Home({ searchParams }: HomeProps) {
   const activeFilters = accessibilityEnabled ? requestedFilters : requestedFilters.filter((id) => id !== "accessible");
   const visibleFilterDefs = INTENT_FILTER_REGISTRY.filter((def) => def.id !== "accessible" || accessibilityEnabled);
 
+  // F1.5: `_mapEnabled` is a test-only override for map.spec.ts, honoured
+  // only under FEED_TEST_MODE (same convention as loadFeed's `_testNow` —
+  // see api/feed/route.ts) so an e2e run can assert the flag-off behaviour
+  // without needing a real Edge Config write. Never reachable in prod.
+  const mapEnabledOverride = typeof params._mapEnabled === "string" ? params._mapEnabled : undefined;
+  const mapEnabled =
+    process.env.FEED_TEST_MODE === "1" && mapEnabledOverride !== undefined
+      ? mapEnabledOverride === "true"
+      : await getFlag("map_enabled");
+
+  // Same FEED_TEST_MODE-gated `_testNow` escape hatch as /api/feed (see
+  // that route) — lets map.spec.ts render the populated feed deterministically
+  // instead of depending on real wall-clock time matching seeded venue hours.
+  const testNow = typeof params._testNow === "string" ? params._testNow : undefined;
+  const now = testNow && process.env.FEED_TEST_MODE === "1" ? new Date(testNow) : undefined;
+
   const relaxation = await loadFeed({
     precinct,
     lat,
     lng,
+    now,
     filters: [...activeFilters, "open_now"],
   });
 
@@ -116,13 +161,7 @@ export default async function Home({ searchParams }: HomeProps) {
       ) : null}
 
       {relaxation.venues.length > 0 ? (
-        <div className="flex flex-col gap-4">
-          {relaxation.venues.map((venue, index) => (
-            <Link key={venue.id} href={`/venue/${venue.id}?position=${index}&source=feed`}>
-              <VenueCard {...venueCardProps(venue)} />
-            </Link>
-          ))}
-        </div>
+        renderVenueList(relaxation, mapEnabled)
       ) : (
         <EmptyState heading="Nothing nearby right now" body="Try clearing a filter or checking back later." />
       )}
