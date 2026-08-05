@@ -43,6 +43,8 @@ export {
   getVenueForCard,
 } from "./provenance";
 export type { AttributeValue, AttributeView, AttributeViewRow, VenueCardData } from "./provenance";
+export { formatClockTime, getVenueDetail } from "./venue-detail";
+export type { TonightHours, VenueDetailData } from "./venue-detail";
 export {
   FEED_CLOSING_BUFFER_MINUTES,
   FEED_SCORING_WEIGHTS,

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { EmptyState, FilterChip, VenueCard } from "@pulse/ui";
 import {
   ATTRIBUTE_REGISTRY_BY_KEY,
@@ -116,8 +117,10 @@ export default async function Home({ searchParams }: HomeProps) {
 
       {relaxation.venues.length > 0 ? (
         <div className="flex flex-col gap-4">
-          {relaxation.venues.map((venue) => (
-            <VenueCard key={venue.id} {...venueCardProps(venue)} />
+          {relaxation.venues.map((venue, index) => (
+            <Link key={venue.id} href={`/venue/${venue.id}?position=${index}&source=feed`}>
+              <VenueCard {...venueCardProps(venue)} />
+            </Link>
           ))}
         </div>
       ) : (
@@ -133,8 +136,10 @@ export default async function Home({ searchParams }: HomeProps) {
         <section className="flex flex-col gap-3">
           <h2 className="text-sm font-semibold text-ink-100">Closing soon</h2>
           <div className="flex flex-col gap-4">
-            {relaxation.closingSoon.map((venue) => (
-              <VenueCard key={venue.id} {...venueCardProps(venue)} />
+            {relaxation.closingSoon.map((venue, index) => (
+              <Link key={venue.id} href={`/venue/${venue.id}?position=${index}&source=closing_soon`}>
+                <VenueCard {...venueCardProps(venue)} />
+              </Link>
             ))}
           </div>
         </section>
