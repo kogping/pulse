@@ -16,21 +16,30 @@ export interface LoadFeedDeps {
   recordMetric?: (event: FeedCacheMetricEvent) => void;
 }
 
+export interface LoadFeedResult extends RelaxationResult {
+  /** Raw coordinates for every venue.venues id, for the F1.5 map pin view.
+   *  Not carried on VenueCardData itself — see feed-cache.ts's FeedCacheResult. */
+  venueLocations: Record<string, { lat: number; lng: number }>;
+}
+
 // Wires the F1.7 relaxation ladder (relaxation.ts, DB-free) to the real
 // Postgres/Redis-backed queries (@pulse/db, feed-cache.ts). The one place
 // both the API route and the feed page assemble these dependencies, so
 // neither can drift on how a rung's radius/filters map onto real reads.
-export function loadFeed(params: LoadFeedParams, deps: LoadFeedDeps = {}): Promise<RelaxationResult> {
+export async function loadFeed(params: LoadFeedParams, deps: LoadFeedDeps = {}): Promise<LoadFeedResult> {
   const { precinct, lat, lng, limit, now, filters } = params;
 
-  return runRelaxationLadder(
+  const venueLocations: Record<string, { lat: number; lng: number }> = {};
+
+  const relaxation = await runRelaxationLadder(
     { filters },
     {
       fetchVenues: async ({ radiusMeters, filters: rungFilters }) => {
-        const { venues } = await getFeedWithCache(
+        const { venues, locations } = await getFeedWithCache(
           { precinct, lat, lng, radiusMeters, limit, now, filters: rungFilters },
           { redis, fetchVenues: getFeedVenuesWithLocation, logger: deps.logger, recordMetric: deps.recordMetric },
         );
+        Object.assign(venueLocations, locations);
         return venues;
       },
       countVenuesPerFilter: ({ radiusMeters, filters: rungFilters }) =>
@@ -38,4 +47,6 @@ export function loadFeed(params: LoadFeedParams, deps: LoadFeedDeps = {}): Promi
       fetchClosingSoon: ({ radiusMeters }) => getClosingSoonVenues({ precinct, lat, lng, radiusMeters, limit, now }),
     },
   );
+
+  return { ...relaxation, venueLocations };
 }

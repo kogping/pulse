@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import type { RelaxationResult } from "./feed/relaxation";
+import type { LoadFeedResult } from "./feed/load-feed";
 
 const verifiedBy = { curatorId: "c1", name: "Alex", tier: "senior" };
 
-function relaxationResult(overrides: Partial<RelaxationResult> = {}): RelaxationResult {
+function relaxationResult(overrides: Partial<LoadFeedResult> = {}): LoadFeedResult {
   return {
     venues: [
       {
@@ -22,6 +22,7 @@ function relaxationResult(overrides: Partial<RelaxationResult> = {}): Relaxation
     rung: { kind: "exact" },
     disclosure: null,
     attempts: [{ kind: "exact" }],
+    venueLocations: { v1: { lat: -33.8975, lng: 151.1795 } },
     ...overrides,
   };
 }

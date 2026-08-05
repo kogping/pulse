@@ -12,12 +12,16 @@ function venue(id: string): VenueCardData {
 // In-memory stand-in for the Upstash REST client. `incr` mirrors
 // @pulse/db's bumpPrecinctFeedCacheVersion so tests can simulate a
 // venue-hours/venue_attributes write invalidating the cache the same way
-// production does.
+// production does. Stored values go through a real JSON.stringify/parse
+// round trip — like the real Upstash REST client does — rather than
+// keeping the live JS object, so a cache hit strips Date-ness from
+// lastVerifiedAt exactly as it would in production (see the
+// "revives lastVerifiedAt" test below, which caught a real bug this way).
 class FakeRedis implements FeedCacheRedisClient {
   private store = new Map<string, unknown>();
 
   async get<T>(key: string): Promise<T | null> {
-    return this.store.has(key) ? (this.store.get(key) as T) : null;
+    return this.store.has(key) ? (JSON.parse(JSON.stringify(this.store.get(key))) as T) : null;
   }
 
   async set(key: string, value: unknown): Promise<unknown> {
@@ -127,6 +131,45 @@ describe("feed cache", () => {
     expect(resultB.cacheHit).toBe(true);
     expect(resultA.venues.map((v) => v.id)).toEqual(["near-a", "near-b"]);
     expect(resultB.venues.map((v) => v.id)).toEqual(["near-b", "near-a"]);
+  });
+
+  it("revives lastVerifiedAt as a real Date on a cache hit", async () => {
+    // Regression test: Upstash's REST client JSON-round-trips cached
+    // values, which silently turns AttributeView's lastVerifiedAt into a
+    // string. Left unrevived, Badge (packages/ui) calls .getTime() on it
+    // and throws — this only ever showed up on a cache *hit*, since a miss
+    // returns Postgres's real Date objects straight through.
+    const redis = new FakeRedis();
+    const lastVerifiedAt = new Date("2026-08-05T20:00:00+10:00");
+    const venueWithBadge: VenueCardData = {
+      id: "a",
+      name: "Venue a",
+      precinct: PRECINCT,
+      attributes: [
+        {
+          key: "cover_charge",
+          value: "$10",
+          confidence: "fresh",
+          lastVerifiedAt,
+          verifiedBy: { curatorId: "c1", name: "Alex", tier: "senior" },
+        },
+        { key: "dress_code", confidence: "unconfirmed" },
+      ],
+    };
+    const fetchVenues = fetchVenuesReturning([{ venue: venueWithBadge, lat: -33.88, lng: 151.2 }]);
+    const now = new Date("2026-08-05T22:00:00+10:00");
+    const request = { precinct: PRECINCT, lat: -33.88, lng: 151.2, now };
+
+    await getFeedWithCache(request, { redis, fetchVenues });
+    const second = await getFeedWithCache(request, { redis, fetchVenues });
+
+    expect(second.cacheHit).toBe(true);
+    const [attribute] = second.venues[0]!.attributes;
+    expect(attribute!.confidence).toBe("fresh");
+    if (attribute!.confidence !== "unconfirmed") {
+      expect(attribute!.lastVerifiedAt).toBeInstanceOf(Date);
+      expect(attribute!.lastVerifiedAt.getTime()).toBe(lastVerifiedAt.getTime());
+    }
   });
 
   it("does not collide two different intent filter sets on the same cache key", async () => {
