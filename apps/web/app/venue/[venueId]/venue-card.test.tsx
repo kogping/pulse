@@ -16,7 +16,7 @@ describe("VenueAttributeCard", () => {
         verifiedBy: CURATOR,
       },
     ];
-    const html = renderToStaticMarkup(<VenueAttributeCard attributes={attributes} />);
+    const html = renderToStaticMarkup(<VenueAttributeCard venueId="v1" attributes={attributes} />);
     expect(html).toContain("$15");
     expect(html).toContain("Verified 5m ago by Sam");
   });
@@ -31,7 +31,7 @@ describe("VenueAttributeCard", () => {
         verifiedBy: CURATOR,
       },
     ];
-    const html = renderToStaticMarkup(<VenueAttributeCard attributes={attributes} />);
+    const html = renderToStaticMarkup(<VenueAttributeCard venueId="v1" attributes={attributes} />);
     expect(html).toContain("smart casual");
     expect(html).toContain("Last checked 3h ago");
     expect(html).toContain("may have changed");
@@ -39,7 +39,7 @@ describe("VenueAttributeCard", () => {
 
   it("renders unconfirmed with no attribute value text at all", () => {
     const attributes: AttributeView[] = [{ key: "queue_length", confidence: "unconfirmed" }];
-    const html = renderToStaticMarkup(<VenueAttributeCard attributes={attributes} />);
+    const html = renderToStaticMarkup(<VenueAttributeCard venueId="v1" attributes={attributes} />);
     expect(html).toContain("Not confirmed");
     // "queue_length" never had a value assigned in this fixture, so any of
     // its known option strings leaking through would mean the unconfirmed
@@ -69,7 +69,7 @@ describe("VenueAttributeCard", () => {
       },
       { key: "wheelchair_accessible", confidence: "unconfirmed" },
     ];
-    const html = renderToStaticMarkup(<VenueAttributeCard attributes={attributes} />);
+    const html = renderToStaticMarkup(<VenueAttributeCard venueId="v1" attributes={attributes} />);
 
     expect(html).toContain("$$");
     expect(html).toContain("Verified 10m ago by Sam");

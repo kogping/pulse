@@ -32,7 +32,7 @@ export default async function VenuePage({ params, searchParams }: VenuePageProps
         {venue.tonight.isOpenTonight ? `Open tonight until ${venue.tonight.closesAt}` : "Closed tonight"}
       </p>
 
-      <VenueAttributeCard attributes={venue.attributes} />
+      <VenueAttributeCard venueId={venue.id} attributes={venue.attributes} />
 
       <DirectionsLink name={venue.name} lat={venue.lat} lng={venue.lng} />
 
