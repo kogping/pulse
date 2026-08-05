@@ -253,13 +253,16 @@ async function main() {
         ]);
       }
 
-      // Link to the precinct's transit hub with a plausible walk time.
+      // Link to the precinct's transit hub with a plausible walk time. Only
+      // one hub is seeded per precinct, so it's trivially the primary.
       const hubId = hubIdByPrecinct.get(precinct.name);
       if (!hubId) throw new Error(`no hub for precinct ${precinct.name}`);
       await db.insert(venueHubLinks).values({
         venueId: venue.id,
         transitHubId: hubId,
-        walkMinutes: 2 + Math.floor(rand() * 12),
+        walkSeconds: (2 + Math.floor(rand() * 12)) * 60,
+        isPrimary: true,
+        isEstimated: false,
       });
     }
   }

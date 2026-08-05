@@ -67,6 +67,22 @@ async function invalidateFeedCache(precinct: string): Promise<void> {
   }
 }
 
+// Onboarding-time transit hub linking (not per-request — see
+// packages/db/src/hub-links.ts). Best-effort, same contract as
+// invalidateFeedCache above: a PostGIS query failure or a Mapbox outage must
+// never fail the curator's venue save, since computeVenueHubLinks already
+// degrades a per-hub Mapbox failure to an estimated straight-line walk time
+// rather than throwing — this catch only guards against the DB-level parts
+// (finding candidate hubs, writing the link rows).
+async function relinkVenueHubs(venueId: string, location: { lat: number; lng: number }): Promise<void> {
+  try {
+    const { linkVenueToNearestHubs } = await import("@pulse/db");
+    await linkVenueToNearestHubs(venueId, location);
+  } catch (error) {
+    console.warn(`[hub-links] failed to link venue "${venueId}" to transit hubs`, error);
+  }
+}
+
 function createDrizzleVenueStore(): VenueStore {
   async function slugTaken(precinct: string, slug: string, excludeVenueId?: string): Promise<boolean> {
     const { db, venues } = await import("@pulse/db");
@@ -136,6 +152,7 @@ function createDrizzleVenueStore(): VenueStore {
       }
       await db.batch(queries as [BatchQuery, ...BatchQuery[]]);
       await invalidateFeedCache(input.precinct);
+      await relinkVenueHubs(venueId, input.location);
       return { ok: true, venueId };
     },
 
@@ -144,7 +161,12 @@ function createDrizzleVenueStore(): VenueStore {
       const { eq, sql } = await import("drizzle-orm");
 
       const existing = await db
-        .select({ id: venues.id, precinct: venues.precinct })
+        .select({
+          id: venues.id,
+          precinct: venues.precinct,
+          lat: sql<number>`ST_Y(${venues.location}::geometry)`,
+          lng: sql<number>`ST_X(${venues.location}::geometry)`,
+        })
         .from(venues)
         .where(eq(venues.id, venueId))
         .limit(1);
@@ -213,6 +235,16 @@ function createDrizzleVenueStore(): VenueStore {
       await db.batch(queries as [BatchQuery, ...BatchQuery[]]);
       await invalidateFeedCache(input.precinct);
       if (existing[0]!.precinct !== input.precinct) await invalidateFeedCache(existing[0]!.precinct);
+
+      // Recompute hub links only on an actual move, not every edit — a
+      // ~0.11m tolerance absorbs the geography round-trip's float noise
+      // without missing a real move.
+      const LOCATION_UNCHANGED_TOLERANCE_DEGREES = 0.000001;
+      const moved =
+        Math.abs(existing[0]!.lat - input.location.lat) > LOCATION_UNCHANGED_TOLERANCE_DEGREES ||
+        Math.abs(existing[0]!.lng - input.location.lng) > LOCATION_UNCHANGED_TOLERANCE_DEGREES;
+      if (moved) await relinkVenueHubs(venueId, input.location);
+
       return { ok: true, venueId };
     },
 

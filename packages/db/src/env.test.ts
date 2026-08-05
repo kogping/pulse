@@ -11,6 +11,7 @@ const envSchema = z.object({
     .startsWith("postgresql://", "DATABASE_URL must be a postgresql:// connection string"),
   UPSTASH_REDIS_REST_URL: z.string().url(),
   UPSTASH_REDIS_REST_TOKEN: z.string().min(1),
+  MAPBOX_TOKEN: z.string().min(1),
 });
 
 describe("env schema", () => {
@@ -18,6 +19,7 @@ describe("env schema", () => {
     DATABASE_URL: "postgresql://user:pass@host.ap-southeast-2.aws.neon.tech/neondb?sslmode=require",
     UPSTASH_REDIS_REST_URL: "https://example.upstash.io",
     UPSTASH_REDIS_REST_TOKEN: "token",
+    MAPBOX_TOKEN: "token",
   };
 
   it("accepts a fully populated, valid env", () => {
