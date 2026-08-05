@@ -11,3 +11,4 @@ export * from "./scheduled-departures";
 export * from "./curator-venue-interests";
 export * from "./pending-edits";
 export * from "./audit-samples";
+export * from "./out-of-coverage-signups";

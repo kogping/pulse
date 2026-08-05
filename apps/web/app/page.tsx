@@ -10,16 +10,8 @@ import {
 import { getFlag } from "@pulse/config";
 import { FeedAnalytics } from "./feed/feed-analytics";
 import { loadFeed } from "./feed/load-feed";
-
-// Fixed seed precinct/coords — browser geolocation is out of scope for
-// F1.6/F1.7 (CLAUDE.md invariant 6: coordinates are used in-request and
-// discarded, never persisted, so wiring a real location prompt is its own
-// task, not a side effect of this one). Newtown matches the seeded data
-// (packages/db/scripts/seed.ts) and the existing e2e fixture
-// (apps/web/e2e/feed-2am.spec.ts).
-const DEFAULT_PRECINCT = "Newtown";
-const DEFAULT_LAT = -33.8975;
-const DEFAULT_LNG = 151.1795;
+import { LocationGate } from "./location/location-gate";
+import { PrecinctSwitcher } from "./location/precinct-switcher";
 
 function isLastEntry(attribute: AttributeView): boolean {
   return attribute.key === "last_entry_tonight";
@@ -59,8 +51,27 @@ interface HomeProps {
 
 export default async function Home({ searchParams }: HomeProps) {
   const params = await searchParams;
-  const rawFilters = typeof params.filters === "string" ? params.filters.split(",").filter(Boolean) : [];
+  const filtersParam = typeof params.filters === "string" ? params.filters : undefined;
+  const rawFilters = filtersParam ? filtersParam.split(",").filter(Boolean) : [];
   const requestedFilters = parseIntentFilterIds(rawFilters);
+
+  // F1.1: precinct/lat/lng are resolved client-side (geolocation, the
+  // remembered/picked precinct, or the picker) and land here as URL search
+  // params — see location/location-gate.tsx. Until that resolution has
+  // happened, there's nothing to feed loadFeed, so the page renders the
+  // gate instead of a feed.
+  const precinct = typeof params.precinct === "string" ? params.precinct : undefined;
+  const lat = typeof params.lat === "string" ? Number(params.lat) : undefined;
+  const lng = typeof params.lng === "string" ? Number(params.lng) : undefined;
+
+  if (!precinct || lat === undefined || lng === undefined || Number.isNaN(lat) || Number.isNaN(lng)) {
+    return (
+      <main className="mx-auto flex min-h-dvh w-full max-w-[430px] flex-col gap-4 px-4 pb-safe-b pt-safe-t">
+        <h1 className="pt-4 text-2xl font-semibold text-ink-50">Pulse — what's good tonight</h1>
+        <LocationGate filtersParam={filtersParam} />
+      </main>
+    );
+  }
 
   // The accessible chip is omitted from the page entirely when the flag is
   // off, not merely disabled — docs/runbook/kill-switches.md: "when off,
@@ -72,15 +83,18 @@ export default async function Home({ searchParams }: HomeProps) {
   const visibleFilterDefs = INTENT_FILTER_REGISTRY.filter((def) => def.id !== "accessible" || accessibilityEnabled);
 
   const relaxation = await loadFeed({
-    precinct: DEFAULT_PRECINCT,
-    lat: DEFAULT_LAT,
-    lng: DEFAULT_LNG,
+    precinct,
+    lat,
+    lng,
     filters: [...activeFilters, "open_now"],
   });
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-[430px] flex-col gap-4 px-4 pb-safe-b pt-safe-t">
-      <h1 className="pt-4 text-2xl font-semibold text-ink-50">Pulse — what's good tonight</h1>
+      <div className="flex items-center justify-between pt-4">
+        <h1 className="text-2xl font-semibold text-ink-50">Pulse — what's good tonight</h1>
+        <PrecinctSwitcher currentPrecinctName={precinct} filtersParam={filtersParam} />
+      </div>
       <div className="flex gap-2 overflow-x-auto">
         {visibleFilterDefs.map((def) =>
           def.id === "open_now" ? (
@@ -127,7 +141,7 @@ export default async function Home({ searchParams }: HomeProps) {
       ) : null}
 
       <FeedAnalytics
-        precinct={DEFAULT_PRECINCT}
+        precinct={precinct}
         filters={activeFilters}
         resultCount={relaxation.venues.length}
         attempts={relaxation.attempts}

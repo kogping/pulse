@@ -28,9 +28,18 @@ function relaxationResult(overrides: Partial<RelaxationResult> = {}): Relaxation
 
 vi.mock("@pulse/config", () => ({ getFlag: vi.fn(async () => false) }));
 vi.mock("./feed/load-feed", () => ({ loadFeed: vi.fn() }));
+// renderToStaticMarkup has no Next.js router context — LocationGate and
+// PrecinctSwitcher only call useRouter() for client-side navigation
+// (replace()), which these server-rendered-shell tests never trigger.
+vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: vi.fn(), push: vi.fn() }) }));
 
 const { loadFeed } = await import("./feed/load-feed");
 const { default: Home } = await import("./page");
+
+// F1.1: precinct/lat/lng only ever arrive as resolved search params (see
+// location/location-gate.tsx) — these tests exercise the page as if that
+// resolution already happened.
+const RESOLVED_LOCATION = { precinct: "Newtown", lat: "-33.8975", lng: "151.1795" };
 
 describe("Home", () => {
   beforeEach(() => {
@@ -38,8 +47,15 @@ describe("Home", () => {
     vi.mocked(loadFeed).mockResolvedValue(relaxationResult());
   });
 
-  it("renders the venue feed shell with the design system components", async () => {
+  it("renders the location gate instead of the feed when precinct/lat/lng are unresolved", async () => {
     const html = renderToStaticMarkup(await Home({ searchParams: Promise.resolve({}) }));
+    expect(html).toContain("Pulse — what");
+    expect(html).not.toContain("The Lansdowne");
+    expect(loadFeed).not.toHaveBeenCalled();
+  });
+
+  it("renders the venue feed shell with the design system components", async () => {
+    const html = renderToStaticMarkup(await Home({ searchParams: Promise.resolve(RESOLVED_LOCATION) }));
     expect(html).toContain("Pulse — what");
     expect(html).toContain("The Lansdowne");
     expect(html).toContain("Open now");
@@ -47,7 +63,7 @@ describe("Home", () => {
   });
 
   it("hides the accessible chip when accessibility_filter_enabled is off", async () => {
-    const html = renderToStaticMarkup(await Home({ searchParams: Promise.resolve({}) }));
+    const html = renderToStaticMarkup(await Home({ searchParams: Promise.resolve(RESOLVED_LOCATION) }));
     expect(html).not.toContain("Wheelchair accessible");
   });
 
@@ -60,7 +76,7 @@ describe("Home", () => {
       }),
     );
 
-    const html = renderToStaticMarkup(await Home({ searchParams: Promise.resolve({}) }));
+    const html = renderToStaticMarkup(await Home({ searchParams: Promise.resolve(RESOLVED_LOCATION) }));
     expect(html).toContain("widening to 1.2km");
   });
 
@@ -75,14 +91,14 @@ describe("Home", () => {
       }),
     );
 
-    const html = renderToStaticMarkup(await Home({ searchParams: Promise.resolve({}) }));
+    const html = renderToStaticMarkup(await Home({ searchParams: Promise.resolve(RESOLVED_LOCATION) }));
     expect(html).toContain("Closing soon");
     expect(html).toContain("Last Drinks Bar");
     expect(html.indexOf("Last Drinks Bar")).toBeGreaterThan(html.indexOf("The Lansdowne"));
   });
 
   it("passes the requested filters through to loadFeed, always including open_now", async () => {
-    await Home({ searchParams: Promise.resolve({ filters: "live_music,no_cover" }) });
+    await Home({ searchParams: Promise.resolve({ ...RESOLVED_LOCATION, filters: "live_music,no_cover" }) });
     expect(loadFeed).toHaveBeenCalledWith(
       expect.objectContaining({ filters: expect.arrayContaining(["live_music", "no_cover", "open_now"]) }),
     );
