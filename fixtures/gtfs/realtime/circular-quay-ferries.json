@@ -1,0 +1,11 @@
+{
+  "description": "Circular Quay ferry wharf trip updates, including one already-departed trip that must be ignored — synthetic, see README.md",
+  "capturedAtEpochSeconds": 1770206400,
+  "hubStopId": "200070",
+  "groundTruthMinutesUntilDeparture": 1,
+  "entities": [
+    { "id": "trip-1", "routeId": "F1", "stopId": "200070", "departureEpochSeconds": 1770206370 },
+    { "id": "trip-2", "routeId": "F1", "stopId": "200070", "departureEpochSeconds": 1770206460 },
+    { "id": "trip-3", "routeId": "F4", "stopId": "200070", "departureEpochSeconds": 1770207600 }
+  ]
+}

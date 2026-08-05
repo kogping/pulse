@@ -1,7 +1,7 @@
 export const PACKAGE_NAME = "@pulse/db";
 
-export { getEnv } from "./env";
-export type { Env } from "./env";
+export { getDatabaseEnv, getEnv, getMapboxEnv, getUpstashEnv } from "./env";
+export type { DatabaseEnv, Env, MapboxEnv, UpstashEnv } from "./env";
 export { db, sql } from "./client";
 export { redis } from "./redis";
 export * from "./schema";
@@ -90,8 +90,12 @@ export {
   MAX_HUBS_PER_VENUE,
   computeVenueHubLinks,
   findNearestHubCandidates,
+  getPrimaryHubForVenue,
+  getTransitHubById,
   linkVenueToNearestHubs,
 } from "./hub-links";
-export type { HubCandidate, HubLinkResult } from "./hub-links";
+export type { HubCandidate, HubLinkResult, PrimaryHubForVenue, TransitHubSummary } from "./hub-links";
 export { mapboxWalkingClient } from "./mapbox";
 export type { LatLng, WalkingDirectionsClient } from "./mapbox";
+export { getScheduledTransportForHub, resolveScheduledTransportState } from "./scheduled-transport";
+export type { ScheduledDeparture, ScheduledDepartureRow, ScheduledTransportState } from "./scheduled-transport";

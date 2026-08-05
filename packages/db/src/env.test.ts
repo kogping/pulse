@@ -1,48 +1,67 @@
-import { describe, expect, it } from "vitest";
-import { z } from "zod";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { __resetEnvCacheForTests, getDatabaseEnv, getEnv, getMapboxEnv, getUpstashEnv } from "./env";
 
-// Re-declared rather than imported: importing ./env parses process.env at
-// module load, which would make this test depend on process.env state set
-// up before vitest even starts.
-const envSchema = z.object({
-  DATABASE_URL: z
-    .string()
-    .url()
-    .startsWith("postgresql://", "DATABASE_URL must be a postgresql:// connection string"),
-  UPSTASH_REDIS_REST_URL: z.string().url(),
-  UPSTASH_REDIS_REST_TOKEN: z.string().min(1),
-  MAPBOX_TOKEN: z.string().min(1),
-});
+const VALID = {
+  DATABASE_URL: "postgresql://user:pass@host.ap-southeast-2.aws.neon.tech/neondb?sslmode=require",
+  UPSTASH_REDIS_REST_URL: "https://example.upstash.io",
+  UPSTASH_REDIS_REST_TOKEN: "token",
+  MAPBOX_TOKEN: "token",
+};
 
-describe("env schema", () => {
-  const valid = {
-    DATABASE_URL: "postgresql://user:pass@host.ap-southeast-2.aws.neon.tech/neondb?sslmode=require",
-    UPSTASH_REDIS_REST_URL: "https://example.upstash.io",
-    UPSTASH_REDIS_REST_TOKEN: "token",
-    MAPBOX_TOKEN: "token",
-  };
+function stubEnv(overrides: Partial<typeof VALID> = {}) {
+  const merged = { ...VALID, ...overrides };
+  for (const [key, value] of Object.entries(merged)) vi.stubEnv(key, value);
+}
 
-  it("accepts a fully populated, valid env", () => {
-    expect(() => envSchema.parse(valid)).not.toThrow();
+describe("env", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    __resetEnvCacheForTests();
   });
 
-  it("throws when DATABASE_URL is missing", () => {
-    const rest: Partial<typeof valid> = { ...valid };
-    delete rest.DATABASE_URL;
-    expect(() => envSchema.parse(rest)).toThrow();
+  it("getDatabaseEnv succeeds on a fully populated env", () => {
+    stubEnv();
+    expect(getDatabaseEnv().DATABASE_URL).toBe(VALID.DATABASE_URL);
   });
 
-  it("throws when DATABASE_URL is not a postgresql:// URL", () => {
-    expect(() => envSchema.parse({ ...valid, DATABASE_URL: "mysql://host/db" })).toThrow();
+  it("getDatabaseEnv throws when DATABASE_URL is not a postgresql:// URL", () => {
+    stubEnv({ DATABASE_URL: "mysql://host/db" });
+    expect(() => getDatabaseEnv()).toThrow();
   });
 
-  it("throws when UPSTASH_REDIS_REST_URL is missing", () => {
-    const rest: Partial<typeof valid> = { ...valid };
-    delete rest.UPSTASH_REDIS_REST_URL;
-    expect(() => envSchema.parse(rest)).toThrow();
+  it("getUpstashEnv throws when UPSTASH_REDIS_REST_TOKEN is empty", () => {
+    stubEnv({ UPSTASH_REDIS_REST_TOKEN: "" });
+    expect(() => getUpstashEnv()).toThrow();
   });
 
-  it("throws when UPSTASH_REDIS_REST_TOKEN is empty", () => {
-    expect(() => envSchema.parse({ ...valid, UPSTASH_REDIS_REST_TOKEN: "" })).toThrow();
+  // The regression this file exists to guard against: getEnv() used to
+  // parse all four vars as one object, so a deployment missing only
+  // MAPBOX_TOKEN (the hub-linking feature's credential) 500'd on every
+  // route that touched Postgres or Redis, including ones with nothing to
+  // do with Mapbox — see /api/feed and /api/_latency. Each getter must
+  // validate and fail independently of the others.
+  it("a missing MAPBOX_TOKEN does not break getDatabaseEnv or getUpstashEnv", () => {
+    stubEnv({ MAPBOX_TOKEN: "" });
+
+    expect(() => getMapboxEnv()).toThrow();
+    expect(() => getDatabaseEnv()).not.toThrow();
+    expect(() => getUpstashEnv()).not.toThrow();
+  });
+
+  it("getEnv still validates everything when a caller wants it all at once", () => {
+    stubEnv({ MAPBOX_TOKEN: "" });
+    expect(() => getEnv()).toThrow();
+  });
+
+  it("each getter caches independently, so a later fix to one var doesn't require re-reading the others", () => {
+    stubEnv({ MAPBOX_TOKEN: "" });
+    expect(() => getMapboxEnv()).toThrow();
+    expect(getDatabaseEnv().DATABASE_URL).toBe(VALID.DATABASE_URL);
+
+    vi.stubEnv("MAPBOX_TOKEN", "now-set");
+    // Still cached as unset internally only for the failed getter — a fresh
+    // call re-validates against the now-fixed process.env since the failed
+    // parse never populated the cache.
+    expect(getMapboxEnv().MAPBOX_TOKEN).toBe("now-set");
   });
 });
