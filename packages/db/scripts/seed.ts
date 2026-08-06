@@ -166,19 +166,28 @@ async function main() {
     for (let i = 0; i < venuesPerPrecinct; i++) {
       venueCounter++;
       const name = `${pick(VENUE_NAME_PARTS.prefixes)} ${pick(VENUE_NAME_PARTS.nouns)}`;
+      const slug = slugify(name, venueCounter);
       const lon = minLon + rand() * (maxLon - minLon);
       const lat = minLat + rand() * (maxLat - minLat);
+      // Most (not all) seeded venues get a placeholder photo — Lorem
+      // Picsum, seeded by slug so it's stable across re-seeds — so preview
+      // branches (packages/db/scripts/seed.ts is what they run; the real
+      // Google Places import never touches them) have something to render
+      // in VenueCard/the venue detail page, while still exercising the
+      // no-photo path for a few venues.
+      const photoUrl = rand() < 0.7 ? `https://picsum.photos/seed/${slug}/800/600` : null;
 
       const [venue] = await db
         .insert(venues)
         .values({
           precinct: precinct.name,
           name,
-          slug: slugify(name, venueCounter),
+          slug,
           address: `${1 + Math.floor(rand() * 200)} ${precinct.name} Rd, ${precinct.name} NSW`,
           location: sql`ST_SetSRID(ST_MakePoint(${lon}, ${lat}), 4326)::geography`,
           qualityTier: pick([...QUALITY_TIERS]),
           curatorPitch: `A ${precinct.name} regular for a reason.`,
+          photoUrl,
         })
         .returning({ id: venues.id });
       if (!venue) throw new Error("failed to insert venue");

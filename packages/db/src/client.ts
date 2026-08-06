@@ -7,4 +7,4 @@ import { lazy } from "./lazy";
 // without going through the Drizzle query builder.
 export const sql = lazy<NeonQueryFunction<false, false>>(() => neon(getDatabaseEnv().DATABASE_URL));
 
-export const db = lazy<NeonHttpDatabase>(() => drizzle(sql));
+export const db = lazy<NeonHttpDatabase>(() => drizzle(sql), { callable: false });
