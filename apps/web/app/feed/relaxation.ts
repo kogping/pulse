@@ -1,4 +1,4 @@
-import type { IntentFilterId, VenueCardData } from "@pulse/db";
+import type { FeedVenue, IntentFilterId } from "@pulse/db";
 import { INTENT_FILTER_REGISTRY_BY_ID } from "@pulse/db";
 
 // F1.7: when a filter set returns fewer than RELAXATION_TARGET_RESULTS
@@ -23,10 +23,10 @@ export type RelaxationRung =
 export interface RelaxationResult {
   /** Main feed section. Never contains a venue closing within 45 minutes,
    *  at any rung — that's what closingSoon is for. */
-  venues: VenueCardData[];
+  venues: FeedVenue[];
   /** Separate, explicitly-labelled section, rendered below the fold. Only
    *  populated once the ladder reaches the closing_soon rung. */
-  closingSoon: VenueCardData[];
+  closingSoon: FeedVenue[];
   /** The rung the ladder settled on. */
   rung: RelaxationRung;
   /** UI copy naming the specific relaxation applied, or null at "exact"
@@ -40,18 +40,23 @@ export interface RelaxationResult {
 export interface RelaxationFetchArgs {
   radiusMeters: number;
   filters: IntentFilterId[];
+  openNowOnly: boolean;
 }
 
 export interface RelaxationDeps {
-  fetchVenues: (args: RelaxationFetchArgs) => Promise<VenueCardData[]>;
+  fetchVenues: (args: RelaxationFetchArgs) => Promise<FeedVenue[]>;
   countVenuesPerFilter: (args: RelaxationFetchArgs) => Promise<Partial<Record<IntentFilterId, number>>>;
-  fetchClosingSoon: (args: { radiusMeters: number }) => Promise<VenueCardData[]>;
+  fetchClosingSoon: (args: { radiusMeters: number }) => Promise<FeedVenue[]>;
 }
 
 export interface RelaxationParams {
-  /** The visitor's requested filter set (open_now included conceptually, but
-   *  it's a no-op here since the base query always enforces it). */
   filters: IntentFilterId[];
+  /** F1.8: defaults true. false means closed/unconfirmed-hours venues are
+   *  already admitted by every rung's fetchVenues call, so the closing_soon
+   *  fallback rung (below) is skipped — there's nothing left it would add
+   *  that the main list doesn't already show, each venue labelled with its
+   *  own FeedVenueAvailability. */
+  openNowOnly?: boolean;
 }
 
 // The rung's UI-facing disclosure string, or null for "exact" (nothing
@@ -110,13 +115,14 @@ export async function runRelaxationLadder(
   params: RelaxationParams,
   deps: RelaxationDeps,
 ): Promise<RelaxationResult> {
+  const openNowOnly = params.openNowOnly ?? true;
   const attempts: RelaxationRung[] = [];
   let activeFilters = params.filters;
   let radiusMeters: number = RADIUS_LADDER_METERS[0];
 
   const exactRung: RelaxationRung = { kind: "exact" };
   attempts.push(exactRung);
-  let venues = await deps.fetchVenues({ radiusMeters, filters: activeFilters });
+  let venues = await deps.fetchVenues({ radiusMeters, filters: activeFilters, openNowOnly });
   if (venues.length >= RELAXATION_TARGET_RESULTS) {
     return { venues, closingSoon: [], rung: exactRung, disclosure: null, attempts };
   }
@@ -125,24 +131,35 @@ export async function runRelaxationLadder(
     radiusMeters = nextRadius;
     const rung: RelaxationRung = { kind: "widen_radius", radiusMeters };
     attempts.push(rung);
-    venues = await deps.fetchVenues({ radiusMeters, filters: activeFilters });
+    venues = await deps.fetchVenues({ radiusMeters, filters: activeFilters, openNowOnly });
     if (venues.length >= RELAXATION_TARGET_RESULTS) {
       return { venues, closingSoon: [], rung, disclosure: disclosureForRung(rung), attempts };
     }
   }
 
   const droppable = activeFilters.filter((id) => INTENT_FILTER_REGISTRY_BY_ID.get(id)?.droppable);
+  let lastRung: RelaxationRung = attempts[attempts.length - 1]!;
   if (droppable.length > 0) {
-    const counts = await deps.countVenuesPerFilter({ radiusMeters, filters: droppable });
+    const counts = await deps.countVenuesPerFilter({ radiusMeters, filters: droppable, openNowOnly });
     const dropped = pickLeastSelectiveFilter(droppable, counts);
     activeFilters = activeFilters.filter((id) => id !== dropped);
 
     const rung: RelaxationRung = { kind: "drop_filter", dropped, radiusMeters };
     attempts.push(rung);
-    venues = await deps.fetchVenues({ radiusMeters, filters: activeFilters });
+    lastRung = rung;
+    venues = await deps.fetchVenues({ radiusMeters, filters: activeFilters, openNowOnly });
     if (venues.length >= RELAXATION_TARGET_RESULTS) {
       return { venues, closingSoon: [], rung, disclosure: disclosureForRung(rung), attempts };
     }
+  }
+
+  // The closing_soon fallback only makes sense when the main list is
+  // strictly open-now: with openNowOnly:false, every rung above already
+  // admits closed/closing-soon venues into `venues` (each labelled via its
+  // own FeedVenueAvailability), so there's nothing left for a dedicated
+  // "closing soon" section to add.
+  if (!openNowOnly) {
+    return { venues, closingSoon: [], rung: lastRung, disclosure: disclosureForRung(lastRung), attempts };
   }
 
   const closingSoonRung: RelaxationRung = { kind: "closing_soon" };

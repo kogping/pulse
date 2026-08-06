@@ -18,6 +18,7 @@ function relaxationResult(overrides: Partial<LoadFeedResult> = {}): LoadFeedResu
           { key: "last_entry_tonight", value: "1:00 AM", confidence: "fresh", lastVerifiedAt: new Date(), verifiedBy },
         ],
         photo: { kind: "none" },
+        availability: { status: "open", closesAt: "23:00", spansMidnight: false },
       },
     ],
     closingSoon: [],
@@ -86,9 +87,27 @@ describe("Home", () => {
   it("renders closing-soon venues only in the labelled section below the fold, never the main feed", async () => {
     vi.mocked(loadFeed).mockResolvedValueOnce(
       relaxationResult({
-        venues: [{ id: "v1", name: "The Lansdowne", precinct: "Chippendale", source: "curator", attributes: [], photo: { kind: "none" } }],
+        venues: [
+          {
+            id: "v1",
+            name: "The Lansdowne",
+            precinct: "Chippendale",
+            source: "curator",
+            attributes: [],
+            photo: { kind: "none" },
+            availability: { status: "open", closesAt: "23:00", spansMidnight: false },
+          },
+        ],
         closingSoon: [
-          { id: "v2", name: "Last Drinks Bar", precinct: "Chippendale", source: "curator", attributes: [], photo: { kind: "none" } },
+          {
+            id: "v2",
+            name: "Last Drinks Bar",
+            precinct: "Chippendale",
+            source: "curator",
+            attributes: [],
+            photo: { kind: "none" },
+            availability: { status: "open", closesAt: "23:00", spansMidnight: false },
+          },
         ],
         rung: { kind: "closing_soon" },
         disclosure: "Nothing open long enough nearby — these venues close within 45 minutes",
@@ -102,10 +121,42 @@ describe("Home", () => {
     expect(html.indexOf("Last Drinks Bar")).toBeGreaterThan(html.indexOf("The Lansdowne"));
   });
 
-  it("passes the requested filters through to loadFeed, always including open_now", async () => {
+  it("passes the requested filters through to loadFeed, and defaults openNowOnly to true", async () => {
     await Home({ searchParams: Promise.resolve({ ...RESOLVED_LOCATION, filters: "live_music,no_cover" }) });
     expect(loadFeed).toHaveBeenCalledWith(
-      expect.objectContaining({ filters: expect.arrayContaining(["live_music", "no_cover", "open_now"]) }),
+      expect.objectContaining({ filters: ["live_music", "no_cover"], openNowOnly: true }),
     );
+  });
+
+  it("F1.8: passes openNowOnly:false to loadFeed only when openNow=0 is explicitly requested", async () => {
+    await Home({ searchParams: Promise.resolve({ ...RESOLVED_LOCATION, openNow: "0" }) });
+    expect(loadFeed).toHaveBeenCalledWith(expect.objectContaining({ openNowOnly: false }));
+  });
+
+  it("F1.8: the Open now chip is a real toggle — selected by default, its href turns it off", async () => {
+    const html = renderToStaticMarkup(await Home({ searchParams: Promise.resolve(RESOLVED_LOCATION) }));
+    expect(html).toMatch(/<a href="\/\?openNow=0"[^>]*aria-pressed="true"[^>]*>Open now<\/a>/);
+  });
+
+  it("F1.8: with openNow=0, closed venues render an availability label and the chip is unselected", async () => {
+    vi.mocked(loadFeed).mockResolvedValueOnce(
+      relaxationResult({
+        venues: [
+          {
+            id: "v1",
+            name: "The Lansdowne",
+            precinct: "Chippendale",
+            source: "curator",
+            attributes: [],
+            photo: { kind: "none" },
+            availability: { status: "closed", opensAt: "18:00" },
+          },
+        ],
+      }),
+    );
+
+    const html = renderToStaticMarkup(await Home({ searchParams: Promise.resolve({ ...RESOLVED_LOCATION, openNow: "0" }) }));
+    expect(html).toContain("Closed — opens 6:00 PM");
+    expect(html).toMatch(/<a href="\/"[^>]*aria-pressed="false"[^>]*>Open now<\/a>/);
   });
 });

@@ -13,6 +13,8 @@ export interface LoadFeedParams {
   limit?: number;
   now?: Date;
   filters: IntentFilterId[];
+  /** F1.8. Defaults true inside runRelaxationLadder when omitted. */
+  openNowOnly?: boolean;
 }
 
 export interface LoadFeedDeps {
@@ -31,16 +33,16 @@ export interface LoadFeedResult extends RelaxationResult {
 // both the API route and the feed page assemble these dependencies, so
 // neither can drift on how a rung's radius/filters map onto real reads.
 export async function loadFeed(params: LoadFeedParams, deps: LoadFeedDeps = {}): Promise<LoadFeedResult> {
-  const { lat, lng, limit, now, filters } = params;
+  const { lat, lng, limit, now, filters, openNowOnly } = params;
 
   const venueLocations: Record<string, { lat: number; lng: number }> = {};
 
   const relaxation = await runRelaxationLadder(
-    { filters },
+    { filters, openNowOnly },
     {
-      fetchVenues: async ({ radiusMeters, filters: rungFilters }) => {
+      fetchVenues: async ({ radiusMeters, filters: rungFilters, openNowOnly: rungOpenNowOnly }) => {
         const { venues, locations } = await getFeedWithCache(
-          { lat, lng, radiusMeters, limit, now, filters: rungFilters },
+          { lat, lng, radiusMeters, limit, now, filters: rungFilters, openNowOnly: rungOpenNowOnly },
           { redis, fetchVenues: getFeedVenuesWithLocation, logger: deps.logger, recordMetric: deps.recordMetric },
         );
         Object.assign(venueLocations, locations);

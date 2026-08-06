@@ -1,4 +1,4 @@
-import type { IntentFilterId, VenueCardData } from "@pulse/db";
+import type { FeedVenue, IntentFilterId } from "@pulse/db";
 import { geohashEncode, haversineDistanceMeters } from "./geohash";
 
 // Redis feed cache (CLAUDE.md: "Redis feed cache in Upstash").
@@ -34,7 +34,7 @@ export interface FeedCacheRedisClient {
 }
 
 export interface FeedCacheVenue {
-  venue: VenueCardData;
+  venue: FeedVenue;
   lat: number;
   lng: number;
 }
@@ -46,6 +46,7 @@ export type FetchFeedVenues = (params: {
   limit?: number;
   now?: Date;
   filters?: IntentFilterId[];
+  openNowOnly?: boolean;
 }) => Promise<FeedCacheVenue[]>;
 
 export interface FeedCacheParams {
@@ -55,6 +56,9 @@ export interface FeedCacheParams {
   limit?: number;
   now?: Date;
   filters?: IntentFilterId[];
+  /** F1.8. Folded into the cache key (feedCacheFilterHash) — open-now-only
+   *  and open-now-off results differ, so they must never share a key. */
+  openNowOnly?: boolean;
 }
 
 export interface FeedCacheLogger {
@@ -71,7 +75,7 @@ export interface FeedCacheDeps {
 }
 
 export interface FeedCacheResult {
-  venues: VenueCardData[];
+  venues: FeedVenue[];
   /** Same venue ids as `venues`, keyed to raw coordinates — the one place
    *  outside the cache layer that gets to see them, for the F1.5 map pin
    *  view. Never persisted past this response. */
@@ -101,8 +105,13 @@ function feedCacheBucket(now: Date): number {
 // Intent filter ids are sorted before hashing so ?filters=a,b and
 // ?filters=b,a share a cache entry rather than needlessly missing each
 // other — order never affects the AND-composed result.
-function feedCacheFilterHash(filters: { radiusMeters: number; limit: number; intentFilters: IntentFilterId[] }): string {
-  const input = `${filters.radiusMeters}:${filters.limit}:${[...filters.intentFilters].sort().join(",")}`;
+function feedCacheFilterHash(filters: {
+  radiusMeters: number;
+  limit: number;
+  intentFilters: IntentFilterId[];
+  openNowOnly: boolean;
+}): string {
+  const input = `${filters.radiusMeters}:${filters.limit}:${[...filters.intentFilters].sort().join(",")}:${filters.openNowOnly}`;
   let hash = 0;
   for (let i = 0; i < input.length; i++) hash = (hash * 31 + input.charCodeAt(i)) | 0;
   return (hash >>> 0).toString(36);
@@ -155,7 +164,7 @@ function toResult(
 // CLAUDE.md. `deps.fetchVenues` is the only path that ever hits Postgres;
 // everything above it is cache bookkeeping around that one call.
 export async function getFeedWithCache(params: FeedCacheParams, deps: FeedCacheDeps): Promise<FeedCacheResult> {
-  const { lat, lng, radiusMeters = 2000, limit = 10, filters = [] } = params;
+  const { lat, lng, radiusMeters = 2000, limit = 10, filters = [], openNowOnly = true } = params;
   const now = params.now ?? new Date();
   const logger = deps.logger ?? consoleLogger;
   const recordMetric = deps.recordMetric ?? (() => {});
@@ -171,13 +180,13 @@ export async function getFeedWithCache(params: FeedCacheParams, deps: FeedCacheD
 
   if (version === null) {
     recordMetric("degraded");
-    const fresh = await deps.fetchVenues({ lat, lng, radiusMeters, limit, now, filters });
+    const fresh = await deps.fetchVenues({ lat, lng, radiusMeters, limit, now, filters, openNowOnly });
     return toResult(sortByExactDistance(fresh, origin, limit), { cacheHit: false, degraded: true });
   }
 
   const geohash5 = geohashEncode(lat, lng, FEED_CACHE_GEOHASH_PRECISION);
   const bucket = feedCacheBucket(now);
-  const filterHash = feedCacheFilterHash({ radiusMeters, limit, intentFilters: filters });
+  const filterHash = feedCacheFilterHash({ radiusMeters, limit, intentFilters: filters, openNowOnly });
   const key = buildFeedCacheKey({ geohash5, bucket, filterHash, version });
 
   let cached: FeedCacheVenue[] | null = null;
@@ -193,7 +202,7 @@ export async function getFeedWithCache(params: FeedCacheParams, deps: FeedCacheD
   }
 
   recordMetric("miss");
-  const fresh = await deps.fetchVenues({ lat, lng, radiusMeters, limit, now, filters });
+  const fresh = await deps.fetchVenues({ lat, lng, radiusMeters, limit, now, filters, openNowOnly });
   try {
     await deps.redis.set(key, fresh, { ex: FEED_CACHE_TTL_SECONDS });
   } catch (error) {

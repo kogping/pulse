@@ -50,6 +50,9 @@ export async function GET(request: NextRequest) {
     ? requestedFilters
     : requestedFilters.filter((id) => id !== "accessible");
 
+  // F1.8: mirrors page.tsx's parsing — only an explicit "0" turns it off.
+  const openNowOnly = params.get("openNow") !== "0";
+
   const relaxation = await loadFeed(
     {
       precinct,
@@ -58,6 +61,7 @@ export async function GET(request: NextRequest) {
       limit: limit ? Number(limit) : undefined,
       now,
       filters,
+      openNowOnly,
     },
     {
       logger: {
