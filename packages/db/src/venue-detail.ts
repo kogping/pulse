@@ -1,6 +1,7 @@
 import { and, eq, sql as drizzleSql } from "drizzle-orm";
 import { db } from "./client";
 import { venueHours, venues } from "./schema";
+import type { VenueSource } from "./schema";
 import { buildVenueCard, fetchAttributeViewRows, type AttributeView } from "./provenance";
 
 const SYDNEY_TZ = "Australia/Sydney";
@@ -41,6 +42,7 @@ export interface VenueDetailData {
   id: string;
   name: string;
   precinct: string;
+  source: VenueSource;
   curatorPitch: string | null;
   lat: number;
   lng: number;
@@ -58,6 +60,7 @@ export async function getVenueDetail(venueId: string, now: Date = new Date()): P
       id: venues.id,
       name: venues.name,
       precinct: venues.precinct,
+      source: venues.source,
       curatorPitch: venues.curatorPitch,
       lat: drizzleSql<number>`ST_Y(${venues.location}::geometry)`,
       lng: drizzleSql<number>`ST_X(${venues.location}::geometry)`,
@@ -84,12 +87,13 @@ export async function getVenueDetail(venueId: string, now: Date = new Date()): P
       : { isOpenTonight: false };
 
   const attributeRows = await fetchAttributeViewRows([venueId]);
-  const { attributes } = buildVenueCard(venue, attributeRows, now);
+  const { attributes } = buildVenueCard({ ...venue, source: venue.source as VenueSource }, attributeRows, now);
 
   return {
     id: venue.id,
     name: venue.name,
     precinct: venue.precinct,
+    source: venue.source as VenueSource,
     curatorPitch: venue.curatorPitch,
     lat: venue.lat,
     lng: venue.lng,

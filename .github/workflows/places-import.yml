@@ -1,0 +1,49 @@
+name: Places import
+
+# City-wide coverage backfill: pre-seeds suburbs with no curator presence
+# from Google Places, tagged source: "google_places" (never overwrites a
+# venue a curator has claimed — see scripts/places-import.ts). Run
+# periodically rather than on-demand, since it's a grid sweep over Greater
+# Sydney and burns real Places API quota per run.
+#
+# Connects to Neon directly — NOT run from a Vercel build step (invariant:
+# migrations/data loads run from GitHub Actions only).
+on:
+  schedule:
+    - cron: "0 15 * * 1" # weekly, 01:00 Sydney Monday (AEDT, UTC+11) — see docs/runbook for DST handling
+  workflow_dispatch: {}
+
+concurrency:
+  group: places-import
+  cancel-in-progress: false
+
+jobs:
+  import:
+    name: import Places backfill
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build @pulse/db
+        run: pnpm --filter @pulse/db build
+
+      - name: Import
+        run: pnpm places:import
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GOOGLE_PLACES_API_KEY: ${{ secrets.GOOGLE_PLACES_API_KEY }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}

@@ -1,11 +1,23 @@
-import { index, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { check, index, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { geographyPoint } from "./columns";
 import { curators } from "./curators";
+
+// "curator" rows are hand-authored via the console (see createdBy below).
+// "google_places" rows are written only by scripts/places-import.ts, carry
+// no attributes/verification events, and so read as fully unconfirmed —
+// see packages/db/src/provenance.ts and freshness.ts. A curator claiming one
+// via the console flips this to "curator" (apps/console venue-store.ts).
+export const VENUE_SOURCES = ["curator", "google_places"] as const;
+export type VenueSource = (typeof VENUE_SOURCES)[number];
 
 export const venues = pgTable(
   "venues",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    // Free-text display label — historically a precinct name ("Newtown"),
+    // now more generally "the suburb this venue is in" for city-wide
+    // coverage (see packages/db/src/precincts.ts). Not a foreign key.
     precinct: text("precinct").notNull(),
     name: text("name").notNull(),
     // Editable, but unique per precinct rather than globally (two precincts
@@ -26,11 +38,24 @@ export const venues = pgTable(
     // column. Set once at creation, never reassigned on edit (contribution
     // counting attributes edits separately, via verification_events).
     createdBy: uuid("created_by").references(() => curators.id, { onDelete: "set null" }),
+    // Defaults "curator" so every pre-existing row (all hand-authored) is
+    // correctly attributed with no backfill needed — expand-only migration.
+    source: text("source").notNull().default("curator"),
+    // Google Places place id. Null for curator-authored venues. The unique
+    // partial index below is what makes places-import.ts's upsert-by-place-id
+    // idempotent across repeated runs.
+    externalPlaceId: text("external_place_id"),
+    externalSyncedAt: timestamp("external_synced_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     index("venues_location_gist_idx").using("gist", table.location),
     uniqueIndex("venues_precinct_slug_idx").on(table.precinct, table.slug),
+    index("venues_source_idx").on(table.source),
+    uniqueIndex("venues_external_place_id_idx")
+      .on(table.externalPlaceId)
+      .where(sql`${table.externalPlaceId} is not null`),
+    check("venues_source_check", sql`${table.source} in ('curator', 'google_places')`),
   ],
 );

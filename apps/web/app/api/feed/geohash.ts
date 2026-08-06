@@ -49,6 +49,41 @@ export function geohashEncode(lat: number, lng: number, precision: number): stri
   return geohash;
 }
 
+// Inverse of geohashEncode: the centre of the bounding box a geohash string
+// identifies. Used by location-gate.tsx to truncate a visitor's exact
+// geolocation reading down to a geohash-6 cell (~600m) before it ever
+// leaves the browser in a URL — CLAUDE.md invariant 6 permits persisting
+// precinct + geohash-5 "at most"; geohash-6 is deliberately a notch finer
+// (chosen so "closest venue first" is meaningful within a suburb) but still
+// nowhere near exact-coordinate precision, and is never written to a
+// database — only ever a query param.
+export function geohashDecode(geohash: string): { lat: number; lng: number } {
+  let latMin = -90;
+  let latMax = 90;
+  let lngMin = -180;
+  let lngMax = 180;
+  let isEvenBit = true;
+
+  for (const char of geohash) {
+    const charCode = BASE32.indexOf(char);
+    for (let bit = 4; bit >= 0; bit--) {
+      const bitValue = (charCode >> bit) & 1;
+      if (isEvenBit) {
+        const mid = (lngMin + lngMax) / 2;
+        if (bitValue === 1) lngMin = mid;
+        else lngMax = mid;
+      } else {
+        const mid = (latMin + latMax) / 2;
+        if (bitValue === 1) latMin = mid;
+        else latMax = mid;
+      }
+      isEvenBit = !isEvenBit;
+    }
+  }
+
+  return { lat: (latMin + latMax) / 2, lng: (lngMin + lngMax) / 2 };
+}
+
 const EARTH_RADIUS_METERS = 6_371_000;
 
 export function haversineDistanceMeters(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {

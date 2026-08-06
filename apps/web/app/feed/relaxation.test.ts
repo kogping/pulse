@@ -10,7 +10,7 @@ import {
 } from "./relaxation";
 
 function venue(id: string): VenueCardData {
-  return { id, name: `Venue ${id}`, precinct: "surry-hills", attributes: [] };
+  return { id, name: `Venue ${id}`, precinct: "surry-hills", source: "curator", attributes: [] };
 }
 
 function venues(ids: string[]): VenueCardData[] {
@@ -52,29 +52,30 @@ describe("runRelaxationLadder", () => {
     const deps = makeDeps({
       responses: {
         "800:live_music": ["a"],
-        "1200:live_music": ["a", "b", "c"],
+        "1500:live_music": ["a", "b", "c"],
       },
     });
 
     const result = await runRelaxationLadder({ filters: ["live_music"] }, deps);
 
-    expect(result.attempts).toEqual([{ kind: "exact" }, { kind: "widen_radius", radiusMeters: 1200 }]);
-    expect(result.rung).toEqual({ kind: "widen_radius", radiusMeters: 1200 });
-    expect(result.disclosure).toBe("Nothing exact — widening to 1.2km");
+    expect(result.attempts).toEqual([{ kind: "exact" }, { kind: "widen_radius", radiusMeters: 1500 }]);
+    expect(result.rung).toEqual({ kind: "widen_radius", radiusMeters: 1500 });
+    expect(result.disclosure).toBe("Nothing exact — widening to 1.5km");
     expect(result.venues.map((v) => v.id)).toEqual(["a", "b", "c"]);
   });
 
   it("runs every rung in order, names the dropped filter, and never leaks a closing-soon venue into the main feed", async () => {
-    // Nothing meets the target until the filter is dropped at 2000m: too
+    // Nothing meets the target until the filter is dropped at 6000m: too
     // thin even then, so the ladder falls through to closing_soon. "outdoor"
     // is deliberately the more permissive filter (higher count) so it's the
     // one the selectivity rule should drop, not "live_music".
     const deps = makeDeps({
       responses: {
         "800:live_music,outdoor": [],
-        "1200:live_music,outdoor": [],
-        "2000:live_music,outdoor": [],
-        "2000:live_music": ["a", "b"], // dropped "outdoor" -> still under target
+        "1500:live_music,outdoor": [],
+        "3000:live_music,outdoor": [],
+        "6000:live_music,outdoor": [],
+        "6000:live_music": ["a", "b"], // dropped "outdoor" -> still under target
       },
       filterCounts: { live_music: 4, outdoor: 9 },
       closingSoon: ["closing-1", "closing-2"],
@@ -84,9 +85,10 @@ describe("runRelaxationLadder", () => {
 
     expect(result.attempts).toEqual([
       { kind: "exact" },
-      { kind: "widen_radius", radiusMeters: 1200 },
-      { kind: "widen_radius", radiusMeters: 2000 },
-      { kind: "drop_filter", dropped: "outdoor", radiusMeters: 2000 },
+      { kind: "widen_radius", radiusMeters: 1500 },
+      { kind: "widen_radius", radiusMeters: 3000 },
+      { kind: "widen_radius", radiusMeters: 6000 },
+      { kind: "drop_filter", dropped: "outdoor", radiusMeters: 6000 },
       { kind: "closing_soon" },
     ]);
     expect(result.rung).toEqual({ kind: "closing_soon" });
@@ -120,8 +122,9 @@ describe("runRelaxationLadder", () => {
     // from the last radius widen to closing_soon.
     expect(result.attempts).toEqual([
       { kind: "exact" },
-      { kind: "widen_radius", radiusMeters: 1200 },
-      { kind: "widen_radius", radiusMeters: 2000 },
+      { kind: "widen_radius", radiusMeters: 1500 },
+      { kind: "widen_radius", radiusMeters: 3000 },
+      { kind: "widen_radius", radiusMeters: 6000 },
       { kind: "closing_soon" },
     ]);
     expect(deps.countVenuesPerFilter).not.toHaveBeenCalled();
@@ -129,8 +132,8 @@ describe("runRelaxationLadder", () => {
     expect(result.closingSoon.map((v) => v.id)).toEqual(["closing-1"]);
   });
 
-  it("radius ladder matches the documented 800 -> 1200 -> 2000 sequence", () => {
-    expect(RADIUS_LADDER_METERS).toEqual([800, 1200, 2000]);
+  it("radius ladder matches the documented 800 -> 1500 -> 3000 -> 6000 sequence", () => {
+    expect(RADIUS_LADDER_METERS).toEqual([800, 1500, 3000, 6000]);
     expect(RELAXATION_TARGET_RESULTS).toBe(3);
   });
 });

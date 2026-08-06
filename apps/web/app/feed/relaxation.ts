@@ -7,7 +7,12 @@ import { INTENT_FILTER_REGISTRY_BY_ID } from "@pulse/db";
 // feed-cache.ts, which takes its Postgres call as deps.fetchVenues — so this
 // is unit-testable without a database (see relaxation.test.ts).
 export const RELAXATION_TARGET_RESULTS = 3;
-export const RADIUS_LADDER_METERS = [800, 1200, 2000] as const;
+// Widened for city-wide coverage: suburbs with sparse or no curator/Places
+// density need rungs beyond the old 2km inner-Sydney ceiling before falling
+// back to dropping a filter. DISTANCE_NORMALISER_METERS (feed.ts) is fixed
+// independently, so these wider rungs only admit more venues — they don't
+// flatten the ranking of ones already found nearby.
+export const RADIUS_LADDER_METERS = [800, 1500, 3000, 6000] as const;
 
 export type RelaxationRung =
   | { kind: "exact" }

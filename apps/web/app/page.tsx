@@ -31,6 +31,7 @@ function venueCardProps(venue: VenueCardData) {
   return {
     name: venue.name,
     precinct: venue.precinct,
+    source: venue.source,
     attributes: badgeAttributes,
     lastEntry:
       lastEntry && lastEntry.confidence !== "unconfirmed"

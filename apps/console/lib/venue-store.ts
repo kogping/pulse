@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { globalSingleton } from "./global-store";
-import type { VenueInput } from "@pulse/db";
+import type { VenueInput, VenueSource } from "@pulse/db";
 
 // Storage abstraction for venue create/edit — same rationale as
 // curator-store.ts/session-store.ts: production goes through Drizzle/Neon,
@@ -38,6 +38,12 @@ export interface VenueDetailRecord {
   curatorPitch: string;
   hours: VenueHoursRecord[];
   attributes: VenueAttributeRecord[];
+  // "google_places" means this venue was pre-seeded by scripts/places-import.ts
+  // and has never been through a curator's create/update — see the edit page's
+  // unclaimed-listing banner. Any save through this store (create or update)
+  // sets it to "curator": editing through the console, which is curator-only,
+  // is itself the act of claiming a listing, with no separate confirm step.
+  source: VenueSource;
 }
 
 export type VenueWriteOutcome =
@@ -122,6 +128,7 @@ function createDrizzleVenueStore(): VenueStore {
           qualityTier: input.qualityTier,
           curatorPitch: input.curatorPitch,
           createdBy: curatorId,
+          source: "curator",
           location: sql`ST_SetSRID(ST_MakePoint(${input.location.lng}, ${input.location.lat}), 4326)::geography`,
         }),
       ];
@@ -164,6 +171,7 @@ function createDrizzleVenueStore(): VenueStore {
         .select({
           id: venues.id,
           precinct: venues.precinct,
+          createdBy: venues.createdBy,
           lat: sql<number>`ST_Y(${venues.location}::geometry)`,
           lng: sql<number>`ST_X(${venues.location}::geometry)`,
         })
@@ -192,6 +200,13 @@ function createDrizzleVenueStore(): VenueStore {
             address: input.address ?? null,
             qualityTier: input.qualityTier,
             curatorPitch: input.curatorPitch,
+            // Saving through the console — curator-only — is the act of
+            // claiming a listing: flips a scripts/places-import.ts venue to
+            // "curator" with no separate confirm step. createdBy is
+            // attribution-once (schema/venues.ts), so only backfilled here
+            // if it was never set (a places-import venue has none).
+            source: "curator",
+            createdBy: existing[0]!.createdBy ?? curatorId,
             location: sql`ST_SetSRID(ST_MakePoint(${input.location.lng}, ${input.location.lat}), 4326)::geography`,
             updatedAt: new Date(),
           })
@@ -261,6 +276,7 @@ function createDrizzleVenueStore(): VenueStore {
           address: venues.address,
           qualityTier: venues.qualityTier,
           curatorPitch: venues.curatorPitch,
+          source: venues.source,
           lat: sql<number>`ST_Y(${venues.location}::geometry)`,
           lng: sql<number>`ST_X(${venues.location}::geometry)`,
         })
@@ -297,6 +313,7 @@ function createDrizzleVenueStore(): VenueStore {
         location: { lat: venue.lat, lng: venue.lng },
         qualityTier: venue.qualityTier ?? "",
         curatorPitch: venue.curatorPitch ?? "",
+        source: venue.source as VenueSource,
         hours: hourRows.map((h) => ({
           id: h.id,
           dayOfWeek: h.dayOfWeek,
@@ -361,6 +378,7 @@ function createInMemoryVenueStore(): VenueStore {
         location: input.location,
         qualityTier: input.qualityTier,
         curatorPitch: input.curatorPitch,
+        source: "curator",
         hours: toHours(input.hours),
         attributes,
       });
@@ -402,6 +420,7 @@ function createInMemoryVenueStore(): VenueStore {
         location: input.location,
         qualityTier: input.qualityTier,
         curatorPitch: input.curatorPitch,
+        source: "curator",
         hours: toHours(input.hours),
         attributes,
       });

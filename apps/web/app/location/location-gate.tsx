@@ -6,6 +6,20 @@ import { fetchEnabledPrecincts, resolveLocation, type PrecinctOption } from "./a
 import { PrecinctPicker } from "./precinct-picker";
 import { OutOfCoverageScreen } from "./out-of-coverage-screen";
 import { readRememberedPrecinct, rememberPrecinct, forgetRememberedPrecinct } from "./storage";
+import { geohashDecode, geohashEncode } from "../api/feed/geohash";
+
+// City-wide ranking (feed.ts's FEED_SCORING_WEIGHTS.distance) needs the
+// visitor's real position, not a precinct hub centroid, or "closest first"
+// is meaningless. Truncating to a geohash-6 cell (~600m) before it ever
+// reaches the URL keeps this within the spirit of CLAUDE.md invariant 6
+// ("persist precinct + geohash-5 at most") — one geohash character finer
+// than that ceiling, deliberately: a 5km geohash-5 cell is coarser than
+// most Sydney suburbs and would make proximity ranking pointless. Nothing
+// here is persisted server-side; it's a query param, used in-request, same
+// as any other feed coordinate.
+function toGeohash6Cell(lat: number, lng: number): { lat: number; lng: number } {
+  return geohashDecode(geohashEncode(lat, lng, 6));
+}
 
 // >3s of waiting on geolocation reads as broken, not as "still working" —
 // F1.1's slow-geolocation branch renders the picker instead of a spinner.
@@ -59,12 +73,14 @@ export function LocationGate({ filtersParam }: LocationGateProps) {
       if (cancelled || bailedToPicker.current) return;
 
       if (result.status === "resolved") {
-        // The visitor's raw coordinates go to /api/location/resolve and
-        // nowhere else — the redirect uses the resolved precinct's own hub
-        // coordinates (same values the picker branch below uses), never
-        // the coordinates that came out of `position`.
+        // The visitor's raw coordinates went to /api/location/resolve only
+        // to find the nearest area label (result.precinct.name) — the
+        // redirect itself carries the visitor's *own* position, truncated
+        // to a geohash-6 cell, so the feed actually ranks by proximity to
+        // where they are rather than to the area's hub centroid.
         rememberPrecinct({ id: result.precinct.id, name: result.precinct.name });
-        router.replace(targetHref(result.precinct, result.precinct.lat, result.precinct.lng, filtersParam));
+        const cell = toGeohash6Cell(latitude, longitude);
+        router.replace(targetHref(result.precinct, cell.lat, cell.lng, filtersParam));
         return;
       }
       if (result.status === "out_of_coverage") {
