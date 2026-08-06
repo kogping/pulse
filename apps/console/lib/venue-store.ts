@@ -36,6 +36,7 @@ export interface VenueDetailRecord {
   location: { lat: number; lng: number };
   qualityTier: string;
   curatorPitch: string;
+  photoUrl: string | null;
   hours: VenueHoursRecord[];
   attributes: VenueAttributeRecord[];
   // "google_places" means this venue was pre-seeded by scripts/places-import.ts
@@ -127,6 +128,7 @@ function createDrizzleVenueStore(): VenueStore {
           address: input.address ?? null,
           qualityTier: input.qualityTier,
           curatorPitch: input.curatorPitch,
+          photoUrl: input.photoUrl ?? null,
           createdBy: curatorId,
           source: "curator",
           location: sql`ST_SetSRID(ST_MakePoint(${input.location.lng}, ${input.location.lat}), 4326)::geography`,
@@ -200,6 +202,7 @@ function createDrizzleVenueStore(): VenueStore {
             address: input.address ?? null,
             qualityTier: input.qualityTier,
             curatorPitch: input.curatorPitch,
+            photoUrl: input.photoUrl ?? null,
             // Saving through the console — curator-only — is the act of
             // claiming a listing: flips a scripts/places-import.ts venue to
             // "curator" with no separate confirm step. createdBy is
@@ -276,6 +279,7 @@ function createDrizzleVenueStore(): VenueStore {
           address: venues.address,
           qualityTier: venues.qualityTier,
           curatorPitch: venues.curatorPitch,
+          photoUrl: venues.photoUrl,
           source: venues.source,
           lat: sql<number>`ST_Y(${venues.location}::geometry)`,
           lng: sql<number>`ST_X(${venues.location}::geometry)`,
@@ -313,6 +317,7 @@ function createDrizzleVenueStore(): VenueStore {
         location: { lat: venue.lat, lng: venue.lng },
         qualityTier: venue.qualityTier ?? "",
         curatorPitch: venue.curatorPitch ?? "",
+        photoUrl: venue.photoUrl,
         source: venue.source as VenueSource,
         hours: hourRows.map((h) => ({
           id: h.id,
@@ -378,6 +383,7 @@ function createInMemoryVenueStore(): VenueStore {
         location: input.location,
         qualityTier: input.qualityTier,
         curatorPitch: input.curatorPitch,
+        photoUrl: input.photoUrl ?? null,
         source: "curator",
         hours: toHours(input.hours),
         attributes,
@@ -420,6 +426,7 @@ function createInMemoryVenueStore(): VenueStore {
         location: input.location,
         qualityTier: input.qualityTier,
         curatorPitch: input.curatorPitch,
+        photoUrl: input.photoUrl ?? null,
         source: "curator",
         hours: toHours(input.hours),
         attributes,

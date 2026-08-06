@@ -48,6 +48,19 @@ export const venueInputSchema = z
     }),
     qualityTier: z.enum(QUALITY_TIERS),
     curatorPitch: z.string().trim().min(1, "Curator pitch is required"),
+    // Curator-pasted direct image URL — takes priority over a Places photo
+    // on read (provenance.ts's VenuePhoto). Optional: most venues, curated
+    // or not, won't have one yet. An empty string (an untouched form field)
+    // normalises to null rather than failing url() validation.
+    photoUrl: z
+      .string()
+      .trim()
+      .transform((value) => (value === "" ? null : value))
+      .nullable()
+      .optional()
+      .refine((value) => value === null || value === undefined || z.string().url().safeParse(value).success, {
+        message: "Must be a valid URL",
+      }),
     hours: z.array(venueHoursRowSchema).min(1, "At least one opening-hours row is required"),
     attributes: z.array(venueAttributeInputSchema).default([]),
   })

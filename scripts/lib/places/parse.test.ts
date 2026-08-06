@@ -97,7 +97,27 @@ describe("toCandidate", () => {
       lat: -33.87,
       lng: 151.2,
       hours: [{ dayOfWeek: 5, isClosed: false, opensAt: "18:00", closesAt: "23:00" }],
+      photoRef: null,
+      photoAttribution: null,
     });
+  });
+
+  it("extracts the first photo's resource name and attribution", () => {
+    const candidate = toCandidate({
+      ...basePlace,
+      photos: [
+        { name: "places/place-123456/photos/abc", authorAttributions: [{ displayName: "A Googler" }] },
+        { name: "places/place-123456/photos/def", authorAttributions: [{ displayName: "Someone Else" }] },
+      ],
+    });
+    expect(candidate?.photoRef).toBe("places/place-123456/photos/abc");
+    expect(candidate?.photoAttribution).toBe("A Googler");
+  });
+
+  it("carries through no photo rather than inventing one", () => {
+    const candidate = toCandidate(basePlace);
+    expect(candidate?.photoRef).toBeNull();
+    expect(candidate?.photoAttribution).toBeNull();
   });
 
   it("drops a non-operational place — never surfaces a closed-down venue", () => {

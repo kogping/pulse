@@ -102,6 +102,21 @@ export function buildAttributeView(row: AttributeViewRow, now: Date): AttributeV
   };
 }
 
+// Not an AttributeView: a photo carries no freshness/confidence concept
+// (CLAUDE.md invariant #3 is about attribute values, not display media), but
+// it still needs a discriminated shape so a caller can't render a "places"
+// photo without also having its attribution (Places API ToS requires the
+// attribution to be shown alongside the image) or reach for a `url` that
+// doesn't exist on the "places" branch. A curator's pasted photoUrl always
+// wins over an unverified Places photo when both are present.
+export type VenuePhoto = { kind: "curator"; url: string } | { kind: "places"; attribution: string | null } | { kind: "none" };
+
+function buildVenuePhoto(venue: { photoUrl?: string | null; photoRef?: string | null; photoAttribution?: string | null }): VenuePhoto {
+  if (venue.photoUrl) return { kind: "curator", url: venue.photoUrl };
+  if (venue.photoRef) return { kind: "places", attribution: venue.photoAttribution ?? null };
+  return { kind: "none" };
+}
+
 export interface VenueCardData {
   id: string;
   name: string;
@@ -112,11 +127,20 @@ export interface VenueCardData {
   // not just badge staleness.
   source: VenueSource;
   attributes: AttributeView[];
+  photo: VenuePhoto;
 }
 
 // Pure grouping/mapping step, no I/O.
 export function buildVenueCard(
-  venue: { id: string; name: string; precinct: string; source: VenueSource },
+  venue: {
+    id: string;
+    name: string;
+    precinct: string;
+    source: VenueSource;
+    photoUrl?: string | null;
+    photoRef?: string | null;
+    photoAttribution?: string | null;
+  },
   attributeRows: AttributeViewRow[],
   now: Date,
 ): VenueCardData {
@@ -126,6 +150,7 @@ export function buildVenueCard(
     precinct: venue.precinct,
     source: venue.source,
     attributes: attributeRows.filter((row) => row.venueId === venue.id).map((row) => buildAttributeView(row, now)),
+    photo: buildVenuePhoto(venue),
   };
 }
 
@@ -163,7 +188,15 @@ export async function fetchAttributeViewRows(venueIds: string[]): Promise<Attrib
 // return value.
 export async function getVenueForCard(venueId: string): Promise<VenueCardData | null> {
   const [venue] = await db
-    .select({ id: venues.id, name: venues.name, precinct: venues.precinct, source: venues.source })
+    .select({
+      id: venues.id,
+      name: venues.name,
+      precinct: venues.precinct,
+      source: venues.source,
+      photoUrl: venues.photoUrl,
+      photoRef: venues.photoRef,
+      photoAttribution: venues.photoAttribution,
+    })
     .from(venues)
     .where(eq(venues.id, venueId))
     .limit(1);
@@ -171,6 +204,14 @@ export async function getVenueForCard(venueId: string): Promise<VenueCardData | 
 
   const attributeRows = await fetchAttributeViewRows([venueId]);
   return buildVenueCard({ ...venue, source: venue.source as VenueSource }, attributeRows, new Date());
+}
+
+// apps/web's /api/venue-photo proxy route's only DB read — kept minimal
+// (one column) since it runs on every photo request, not just a card/detail
+// fetch.
+export async function getVenuePhotoRef(venueId: string): Promise<string | null> {
+  const [venue] = await db.select({ photoRef: venues.photoRef }).from(venues).where(eq(venues.id, venueId)).limit(1);
+  return venue?.photoRef ?? null;
 }
 
 // Dev/test-only guard: throws with a readable diff-style message the first

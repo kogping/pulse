@@ -10,7 +10,7 @@ import {
 } from "./relaxation";
 
 function venue(id: string): VenueCardData {
-  return { id, name: `Venue ${id}`, precinct: "surry-hills", source: "curator", attributes: [] };
+  return { id, name: `Venue ${id}`, precinct: "surry-hills", source: "curator", attributes: [], photo: { kind: "none" } };
 }
 
 function venues(ids: string[]): VenueCardData[] {

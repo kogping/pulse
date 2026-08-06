@@ -6,7 +6,7 @@ import { geohashEncode } from "./geohash";
 const PRECINCT = "surry-hills";
 
 function venue(id: string): VenueCardData {
-  return { id, name: `Venue ${id}`, precinct: PRECINCT, source: "curator", attributes: [] };
+  return { id, name: `Venue ${id}`, precinct: PRECINCT, source: "curator", attributes: [], photo: { kind: "none" } };
 }
 
 // In-memory stand-in for the Upstash REST client. `incr` mirrors
@@ -156,6 +156,7 @@ describe("feed cache", () => {
         },
         { key: "dress_code", confidence: "unconfirmed" },
       ],
+      photo: { kind: "none" },
     };
     const fetchVenues = fetchVenuesReturning([{ venue: venueWithBadge, lat: -33.88, lng: 151.2 }]);
     const now = new Date("2026-08-05T22:00:00+10:00");

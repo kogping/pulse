@@ -34,6 +34,7 @@ interface FormState {
   lng: string;
   qualityTier: string;
   curatorPitch: string;
+  photoUrl: string;
   hours: HoursRowState[];
   attributes: AttributeState;
 }
@@ -60,6 +61,7 @@ function toFormState(venue?: VenueDetailRecord): FormState {
       lng: "",
       qualityTier: "",
       curatorPitch: "",
+      photoUrl: "",
       hours: defaultHours(),
       attributes: {},
     };
@@ -75,6 +77,7 @@ function toFormState(venue?: VenueDetailRecord): FormState {
     lng: String(venue.location.lng),
     qualityTier: venue.qualityTier,
     curatorPitch: venue.curatorPitch,
+    photoUrl: venue.photoUrl ?? "",
     hours: DAY_LABELS.map((_, dayOfWeek) => {
       const row = hoursByDay.get(dayOfWeek);
       return {
@@ -98,6 +101,7 @@ function toPayload(state: FormState): unknown {
     location: { lat: Number(state.lat), lng: Number(state.lng) },
     qualityTier: state.qualityTier,
     curatorPitch: state.curatorPitch,
+    photoUrl: state.photoUrl.trim() ? state.photoUrl.trim() : null,
     hours: state.hours.map((row) => ({
       dayOfWeek: row.dayOfWeek,
       isClosed: row.isClosed,
@@ -234,6 +238,16 @@ export function VenueForm({ mode, venueId, initialValue }: VenueFormProps) {
           required
         />
         {errors.curatorPitch && <p role="alert">{errors.curatorPitch.join(", ")}</p>}
+
+        <label htmlFor="photoUrl">Photo URL</label>
+        <input
+          id="photoUrl"
+          type="url"
+          placeholder="https://…"
+          value={state.photoUrl}
+          onChange={(e) => setState((p) => ({ ...p, photoUrl: e.target.value }))}
+        />
+        {errors.photoUrl && <p role="alert">{errors.photoUrl.join(", ")}</p>}
       </fieldset>
 
       <fieldset>

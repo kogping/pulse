@@ -73,6 +73,11 @@ export function subdivide(cell: Cell): Cell[] {
 
 export type OpenDay = { day: number; hour: number; minute: number };
 
+export interface PlacePhoto {
+  name?: string;
+  authorAttributions?: { displayName?: string }[];
+}
+
 export interface PlaceResult {
   id: string;
   displayName?: { text?: string };
@@ -81,6 +86,7 @@ export interface PlaceResult {
   addressComponents?: { longText?: string; types?: string[] }[];
   regularOpeningHours?: { periods?: { open?: OpenDay; close?: OpenDay }[] };
   businessStatus?: string;
+  photos?: PlacePhoto[];
 }
 
 const DAY_HOUR_PATTERN = (h: number, m: number) => `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
@@ -92,23 +98,32 @@ export interface CandidateHoursRow {
   closesAt: string | null;
 }
 
-// Places periods -> one venue_hours row per period, opaque HH:mm. A period
+// Places periods -> at most one venue_hours row per day, opaque HH:mm
+// (venue_hours_venue_day_idx allows only one row per venue+day). A period
 // whose close.day differs from open.day naturally yields closesAt <=
 // opensAt in the shift's own opening-day frame — the same past-midnight
 // convention venue_hours already uses (see venue-input.ts's
 // hoursSpanMidnight), so no separate midnight-crossing logic is needed here.
+//
+// A day can have multiple periods (e.g. a restaurant's lunch + dinner
+// service) — this is a "what's good tonight" feed, so when a day has more
+// than one period we keep the latest-opening one (the evening service) and
+// drop the rest, rather than spanning open->close across the gap, which
+// would falsely claim the venue is open through the afternoon lull.
 export function toHoursRows(periods: { open?: OpenDay; close?: OpenDay }[]): CandidateHoursRow[] {
-  const rows: CandidateHoursRow[] = [];
+  const byDay = new Map<number, CandidateHoursRow>();
   for (const period of periods) {
     if (!period.open || !period.close) continue;
-    rows.push({
+    const row: CandidateHoursRow = {
       dayOfWeek: period.open.day,
       isClosed: false,
       opensAt: DAY_HOUR_PATTERN(period.open.hour, period.open.minute),
       closesAt: DAY_HOUR_PATTERN(period.close.hour, period.close.minute),
-    });
+    };
+    const existing = byDay.get(row.dayOfWeek);
+    if (!existing || row.opensAt! > existing.opensAt!) byDay.set(row.dayOfWeek, row);
   }
-  return rows;
+  return [...byDay.values()];
 }
 
 export function suburbFromAddressComponents(components: PlaceResult["addressComponents"]): string | null {
@@ -125,6 +140,12 @@ export interface CandidateVenue {
   lat: number;
   lng: number;
   hours: CandidateHoursRow[];
+  // Google Places photo resource name + attribution, taken from the first
+  // photo Places returns for this place. Null when Places has no photo —
+  // never fabricated (invariant: degrade honestly applied to media, not
+  // just badge values).
+  photoRef: string | null;
+  photoAttribution: string | null;
 }
 
 // businessStatus check first: a closed-down place must never surface, even
@@ -139,6 +160,7 @@ export function toCandidate(place: PlaceResult): CandidateVenue | null {
 
   const precinct = suburbFromAddressComponents(place.addressComponents) ?? "Sydney";
   const periods = place.regularOpeningHours?.periods ?? [];
+  const photo = place.photos?.[0];
 
   return {
     externalPlaceId: place.id,
@@ -147,6 +169,8 @@ export function toCandidate(place: PlaceResult): CandidateVenue | null {
     lat,
     lng,
     hours: toHoursRows(periods),
+    photoRef: photo?.name ?? null,
+    photoAttribution: photo?.authorAttributions?.[0]?.displayName ?? null,
   };
 }
 

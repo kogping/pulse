@@ -17,6 +17,7 @@ function relaxationResult(overrides: Partial<LoadFeedResult> = {}): LoadFeedResu
           { key: "dress_code", confidence: "unconfirmed" },
           { key: "last_entry_tonight", value: "1:00 AM", confidence: "fresh", lastVerifiedAt: new Date(), verifiedBy },
         ],
+        photo: { kind: "none" },
       },
     ],
     closingSoon: [],
@@ -85,8 +86,10 @@ describe("Home", () => {
   it("renders closing-soon venues only in the labelled section below the fold, never the main feed", async () => {
     vi.mocked(loadFeed).mockResolvedValueOnce(
       relaxationResult({
-        venues: [{ id: "v1", name: "The Lansdowne", precinct: "Chippendale", source: "curator", attributes: [] }],
-        closingSoon: [{ id: "v2", name: "Last Drinks Bar", precinct: "Chippendale", source: "curator", attributes: [] }],
+        venues: [{ id: "v1", name: "The Lansdowne", precinct: "Chippendale", source: "curator", attributes: [], photo: { kind: "none" } }],
+        closingSoon: [
+          { id: "v2", name: "Last Drinks Bar", precinct: "Chippendale", source: "curator", attributes: [], photo: { kind: "none" } },
+        ],
         rung: { kind: "closing_soon" },
         disclosure: "Nothing open long enough nearby — these venues close within 45 minutes",
         attempts: [{ kind: "exact" }, { kind: "closing_soon" }],

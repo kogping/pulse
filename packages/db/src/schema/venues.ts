@@ -46,6 +46,18 @@ export const venues = pgTable(
     // idempotent across repeated runs.
     externalPlaceId: text("external_place_id"),
     externalSyncedAt: timestamp("external_synced_at", { withTimezone: true }),
+    // Google Places photo resource name (e.g. "places/.../photos/..."), set
+    // only by scripts/places-import.ts. Not a displayable URL by itself —
+    // resolved on read via apps/web's /api/venue-photo proxy, which is what
+    // keeps GOOGLE_PLACES_API_KEY server-side.
+    photoRef: text("photo_ref"),
+    // Google-required attribution text for photoRef (Places API ToS). Null
+    // whenever photoRef is null.
+    photoAttribution: text("photo_attribution"),
+    // Curator-pasted direct image URL, set only through the console. Takes
+    // priority over photoRef when both are present (see provenance.ts's
+    // VenuePhoto) — a curator's choice overrides an unverified Places photo.
+    photoUrl: text("photo_url"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
