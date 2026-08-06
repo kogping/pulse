@@ -2,6 +2,7 @@ import { sql as drizzleSql } from "drizzle-orm";
 import { db } from "./client";
 import { buildVenueCard, fetchAttributeViewRows, type VenueCardData } from "./provenance";
 import { INTENT_FILTER_REGISTRY_BY_ID, NO_COVER_VALUE_TOKENS, type IntentFilterId } from "./intent-filters";
+import type { VenueSource } from "./schema";
 
 // F1.1-F1.4: the core "what's good tonight" query. Never show a venue
 // that's closed or about to close (invariant: degrade honestly) — that
@@ -27,7 +28,24 @@ export const FEED_SCORING_WEIGHTS = {
     hidden_gem: 1.5,
   } as Record<string, number>,
   freshness: 3,
+  // Curator-authored venues outrank a same-distance, zero-info Places
+  // listing (source.google_places is 0 — no bonus, not a penalty; distance
+  // and freshness alone already rank it lower). At the fixed 2000m
+  // normaliser (DISTANCE_NORMALISER_METERS), 0.8 is worth ~400m of
+  // distance, so a Places venue noticeably closer still wins — the ranking
+  // stays location-dominant, curation is a tiebreaker at comparable range.
+  source: {
+    curator: 0.8,
+    google_places: 0,
+  } as Record<string, number>,
 } as const;
+
+// Fixed rather than derived from the request's radiusMeters: F1.7's
+// relaxation ladder widens radiusMeters to admit more venues in sparse
+// areas, and a normaliser that widened with it would flatten distance's
+// contribution to the score exactly when it matters most for ranking
+// nearby venues first.
+export const DISTANCE_NORMALISER_METERS = 2000;
 
 export interface VenueHoursInput {
   dayOfWeek: number; // 0 = Sunday .. 6 = Saturday, matches schema/venue-hours.ts
@@ -190,9 +208,12 @@ function combineFilterConditions(filters: readonly IntentFilterId[]) {
 
 // Shared candidate-venues + open-now CTE text, used by both the ranking
 // query and countVenuesPerFilter so the two never drift on what "the
-// candidate pool" means (precinct + radius + F1.1-F1.4 open-now exclusion).
-function candidateAndOpenNowCte(params: { precinct: string; lat: number; lng: number; radiusMeters: number; now: Date }) {
-  const { precinct, lat, lng, radiusMeters, now } = params;
+// candidate pool" means (radius + F1.1-F1.4 open-now exclusion). No longer
+// filtered by precinct — venues city-wide within radiusMeters are all
+// candidates, ranked by distance (see FEED_SCORING_WEIGHTS) rather than
+// gated to a single hardcoded precinct.
+function candidateAndOpenNowCte(params: { lat: number; lng: number; radiusMeters: number; now: Date }) {
+  const { lat, lng, radiusMeters, now } = params;
   return drizzleSql`
     candidate_venues AS (
       SELECT
@@ -200,11 +221,11 @@ function candidateAndOpenNowCte(params: { precinct: string; lat: number; lng: nu
         v.name,
         v.precinct,
         v.quality_tier,
+        v.source,
         v.location,
         ST_Distance(v.location, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography) AS distance_m
       FROM venues v
-      WHERE v.precinct = ${precinct}
-        AND ST_DWithin(v.location, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography, ${radiusMeters})
+      WHERE ST_DWithin(v.location, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography, ${radiusMeters})
     ),
     open_now AS (
       SELECT DISTINCT cv.id
@@ -228,16 +249,22 @@ function scoreSqlExpression() {
   const tierCases = Object.entries(FEED_SCORING_WEIGHTS.qualityTier)
     .map(([tier, weight]) => `WHEN ${sqlStringLiteral(tier)} THEN ${weight}`)
     .join(" ");
+  const sourceCases = Object.entries(FEED_SCORING_WEIGHTS.source)
+    .map(([source, weight]) => `WHEN ${sqlStringLiteral(source)} THEN ${weight}`)
+    .join(" ");
 
   return drizzleSql.raw(`(
     ${FEED_SCORING_WEIGHTS.distance} * LEAST(normalised_distance, 1)
     + COALESCE(CASE quality_tier ${tierCases} ELSE 0 END, 0)
     + ${FEED_SCORING_WEIGHTS.freshness} * freshness_score
+    + COALESCE(CASE source ${sourceCases} ELSE 0 END, 0)
   )`);
 }
 
 export interface GetFeedVenuesParams {
-  precinct: string;
+  /** No longer used to filter candidates (feed is city-wide) — kept only as
+   *  a cache-key namespace input for feed-cache.ts callers mid-migration. */
+  precinct?: string;
   lat: number;
   lng: number;
   /** Search radius in metres. Defaults to 2000 (a comfortable walking radius). */
@@ -253,6 +280,7 @@ interface FeedCandidateRow extends Record<string, unknown> {
   id: string;
   name: string;
   precinct: string;
+  source: VenueSource;
   lat: number;
   lng: number;
 }
@@ -266,10 +294,10 @@ interface FeedCandidateRow extends Record<string, unknown> {
 // truth) keeps them, since the cache's post-read exact-distance sort needs
 // real venue coordinates that the public VenueCardData shape doesn't carry.
 async function runFeedRankingQuery(params: GetFeedVenuesParams): Promise<FeedCandidateRow[]> {
-  const { precinct, lat, lng, radiusMeters = 2000, limit = 10, now = new Date(), filters = [] } = params;
+  const { lat, lng, radiusMeters = 2000, limit = 10, now = new Date(), filters = [] } = params;
 
   const result = await db.execute<FeedCandidateRow>(drizzleSql`
-    WITH ${candidateAndOpenNowCte({ precinct, lat, lng, radiusMeters, now })},
+    WITH ${candidateAndOpenNowCte({ lat, lng, radiusMeters, now })},
     badge_freshness AS (
       SELECT
         var.venue_id,
@@ -290,15 +318,16 @@ async function runFeedRankingQuery(params: GetFeedVenuesParams): Promise<FeedCan
         cv.name,
         cv.precinct,
         cv.quality_tier,
+        cv.source,
         cv.location,
-        LEAST(cv.distance_m / NULLIF(${radiusMeters}::float, 0), 1) AS normalised_distance,
-        COALESCE(bf.freshness_score, 0.5) AS freshness_score
+        LEAST(cv.distance_m / ${DISTANCE_NORMALISER_METERS}::float, 1) AS normalised_distance,
+        COALESCE(bf.freshness_score, 0) AS freshness_score
       FROM candidate_venues cv
       JOIN open_now ON open_now.id = cv.id
       LEFT JOIN badge_freshness bf ON bf.venue_id = cv.id
       WHERE ${combineFilterConditions(filters)}
     )
-    SELECT id, name, precinct, ST_Y(location::geometry) AS lat, ST_X(location::geometry) AS lng
+    SELECT id, name, precinct, source, ST_Y(location::geometry) AS lat, ST_X(location::geometry) AS lng
     FROM scored
     ORDER BY ${scoreSqlExpression()} DESC
     LIMIT ${limit}
@@ -345,7 +374,6 @@ export async function getFeedVenuesWithLocation(params: GetFeedVenuesParams): Pr
 }
 
 export interface CountVenuesPerFilterParams {
-  precinct: string;
   lat: number;
   lng: number;
   radiusMeters?: number;
@@ -362,7 +390,7 @@ export interface CountVenuesPerFilterParams {
 export async function countVenuesPerFilter(
   params: CountVenuesPerFilterParams,
 ): Promise<Partial<Record<IntentFilterId, number>>> {
-  const { precinct, lat, lng, radiusMeters = 2000, now = new Date(), filters } = params;
+  const { lat, lng, radiusMeters = 2000, now = new Date(), filters } = params;
   const droppable = filters.filter((id) => INTENT_FILTER_REGISTRY_BY_ID.get(id)?.droppable);
 
   const counts: Partial<Record<IntentFilterId, number>> = {};
@@ -370,7 +398,7 @@ export async function countVenuesPerFilter(
     droppable.map(async (filterId) => {
       const condition = filterMatchSqlCondition(filterId) ?? drizzleSql`true`;
       const result = await db.execute<{ count: number }>(drizzleSql`
-        WITH ${candidateAndOpenNowCte({ precinct, lat, lng, radiusMeters, now })}
+        WITH ${candidateAndOpenNowCte({ lat, lng, radiusMeters, now })}
         SELECT COUNT(*)::int AS count
         FROM candidate_venues cv
         JOIN open_now ON open_now.id = cv.id
@@ -391,7 +419,7 @@ export async function countVenuesPerFilter(
 // explicitly for the labelled "closing soon" section (CLAUDE.md invariant 5
 // and the PRD's 45-minute rule are never relaxed).
 export async function getClosingSoonVenues(params: GetFeedVenuesParams): Promise<VenueCardData[]> {
-  const { precinct, lat, lng, radiusMeters = 2000, limit = 10, now = new Date() } = params;
+  const { lat, lng, radiusMeters = 2000, limit = 10, now = new Date() } = params;
 
   const result = await db.execute<FeedCandidateRow>(drizzleSql`
     WITH candidate_venues AS (
@@ -399,11 +427,11 @@ export async function getClosingSoonVenues(params: GetFeedVenuesParams): Promise
         v.id,
         v.name,
         v.precinct,
+        v.source,
         v.location,
         ST_Distance(v.location, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography) AS distance_m
       FROM venues v
-      WHERE v.precinct = ${precinct}
-        AND ST_DWithin(v.location, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography, ${radiusMeters})
+      WHERE ST_DWithin(v.location, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography, ${radiusMeters})
     ),
     open_no_buffer AS (
       SELECT DISTINCT cv.id
@@ -428,7 +456,7 @@ export async function getClosingSoonVenues(params: GetFeedVenuesParams): Promise
       EXCEPT
       SELECT id FROM open_with_buffer
     )
-    SELECT cv.id, cv.name, cv.precinct, ST_Y(cv.location::geometry) AS lat, ST_X(cv.location::geometry) AS lng
+    SELECT cv.id, cv.name, cv.precinct, cv.source, ST_Y(cv.location::geometry) AS lat, ST_X(cv.location::geometry) AS lng
     FROM candidate_venues cv
     JOIN closing_soon cs ON cs.id = cv.id
     ORDER BY cv.distance_m ASC

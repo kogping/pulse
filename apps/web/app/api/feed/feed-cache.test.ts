@@ -6,7 +6,7 @@ import { geohashEncode } from "./geohash";
 const PRECINCT = "surry-hills";
 
 function venue(id: string): VenueCardData {
-  return { id, name: `Venue ${id}`, precinct: PRECINCT, attributes: [] };
+  return { id, name: `Venue ${id}`, precinct: PRECINCT, source: "curator", attributes: [] };
 }
 
 // In-memory stand-in for the Upstash REST client. `incr` mirrors
@@ -54,7 +54,7 @@ describe("feed cache", () => {
     const redis = new FakeRedis();
     const fetchVenues = fetchVenuesReturning([{ venue: venue("a"), lat: -33.88, lng: 151.2 }]);
     const now = new Date("2026-08-05T22:00:00+10:00");
-    const request = { precinct: PRECINCT, lat: -33.88, lng: 151.2, now };
+    const request = { lat: -33.88, lng: 151.2, now };
 
     const first = await getFeedWithCache(request, { redis, fetchVenues });
     const second = await getFeedWithCache(request, { redis, fetchVenues });
@@ -75,14 +75,14 @@ describe("feed cache", () => {
         : [{ venue: venue("b"), lat: -33.88, lng: 151.2 }];
     });
     const now = new Date("2026-08-05T22:00:00+10:00");
-    const request = { precinct: PRECINCT, lat: -33.88, lng: 151.2, now };
+    const request = { lat: -33.88, lng: 151.2, now };
 
     const before = await getFeedWithCache(request, { redis, fetchVenues });
     expect(before.venues.map((v) => v.id)).toEqual(["a"]);
 
     // Simulates apps/console's venue-store.ts calling
     // bumpPrecinctFeedCacheVersion after a venue_hours write commits.
-    await redis.incr(`feed:version:${PRECINCT}`);
+    await redis.incr("feed:version:syd");
 
     const after = await getFeedWithCache(request, { redis, fetchVenues });
     expect(fetchVenues).toHaveBeenCalledTimes(2);
@@ -96,7 +96,7 @@ describe("feed cache", () => {
     const warn = vi.fn();
 
     const result = await getFeedWithCache(
-      { precinct: PRECINCT, lat: -33.88, lng: 151.2 },
+      { lat: -33.88, lng: 151.2 },
       { redis, fetchVenues, logger: { warn } },
     );
 
@@ -121,8 +121,8 @@ describe("feed cache", () => {
     const fetchVenues = fetchVenuesReturning([nearA, nearB]);
 
     const now = new Date("2026-08-05T22:00:00+10:00");
-    const resultA = await getFeedWithCache({ precinct: PRECINCT, ...userA, now }, { redis, fetchVenues });
-    const resultB = await getFeedWithCache({ precinct: PRECINCT, ...userB, now }, { redis, fetchVenues });
+    const resultA = await getFeedWithCache({ ...userA, now }, { redis, fetchVenues });
+    const resultB = await getFeedWithCache({ ...userB, now }, { redis, fetchVenues });
 
     // Both requests land in the same cache cell/bucket/filter — only one
     // Postgres query for the pair — but each gets its own exact-distance
@@ -145,6 +145,7 @@ describe("feed cache", () => {
       id: "a",
       name: "Venue a",
       precinct: PRECINCT,
+      source: "curator",
       attributes: [
         {
           key: "cover_charge",
@@ -158,7 +159,7 @@ describe("feed cache", () => {
     };
     const fetchVenues = fetchVenuesReturning([{ venue: venueWithBadge, lat: -33.88, lng: 151.2 }]);
     const now = new Date("2026-08-05T22:00:00+10:00");
-    const request = { precinct: PRECINCT, lat: -33.88, lng: 151.2, now };
+    const request = { lat: -33.88, lng: 151.2, now };
 
     await getFeedWithCache(request, { redis, fetchVenues });
     const second = await getFeedWithCache(request, { redis, fetchVenues });
@@ -182,7 +183,7 @@ describe("feed cache", () => {
         : [{ venue: venue("outdoor-venue"), lat: -33.88, lng: 151.2 }];
     });
     const now = new Date("2026-08-05T22:00:00+10:00");
-    const base = { precinct: PRECINCT, lat: -33.88, lng: 151.2, now };
+    const base = { lat: -33.88, lng: 151.2, now };
 
     const liveMusic = await getFeedWithCache({ ...base, filters: ["live_music"] }, { redis, fetchVenues });
     const outdoor = await getFeedWithCache({ ...base, filters: ["outdoor"] }, { redis, fetchVenues });

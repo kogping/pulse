@@ -3,15 +3,20 @@ import { geohashEncode, haversineDistanceMeters } from "./geohash";
 
 // Redis feed cache (CLAUDE.md: "Redis feed cache in Upstash").
 //
-// Key shape: feed:{precinct}:{geohash5}:{5-min-bucket}:{filter-hash}:v{version}
+// Key shape: feed:syd:{geohash5}:{5-min-bucket}:{filter-hash}:v{version}
 //   - geohash5 buckets nearby requesters into the same cell so they share a
 //     cache entry.
 //   - the 5-min bucket is the TTL window.
-//   - filter-hash distinguishes radius/limit combinations.
-//   - version is a per-precinct counter (see @pulse/db's
-//     bumpPrecinctFeedCacheVersion): bumping it makes every previously
-//     cached key for that precinct unreachable without a SCAN-and-delete —
-//     new reads compute a new key, old keys just expire via TTL.
+//   - filter-hash distinguishes radius/limit combinations (it already folds
+//     in radiusMeters, so F1.7's wider relaxation rungs get distinct keys
+//     for free).
+//   - version is a single global counter (see @pulse/db's
+//     bumpFeedCacheVersion): bumping it makes every previously cached key
+//     unreachable without a SCAN-and-delete — new reads compute a new key,
+//     old keys just expire via TTL. There is no per-precinct key anymore —
+//     the feed is city-wide (feed.ts's candidateAndOpenNowCte no longer
+//     filters by precinct), so a write anywhere can affect any request's
+//     candidate set.
 //
 // The cached payload keeps each venue's raw coordinates (not exposed on the
 // public VenueCardData shape) so that after a cache read, results can be
@@ -35,7 +40,6 @@ export interface FeedCacheVenue {
 }
 
 export type FetchFeedVenues = (params: {
-  precinct: string;
   lat: number;
   lng: number;
   radiusMeters?: number;
@@ -45,7 +49,6 @@ export type FetchFeedVenues = (params: {
 }) => Promise<FeedCacheVenue[]>;
 
 export interface FeedCacheParams {
-  precinct: string;
   lat: number;
   lng: number;
   radiusMeters?: number;
@@ -85,8 +88,8 @@ const consoleLogger: FeedCacheLogger = {
   },
 };
 
-function feedCacheVersionKey(precinct: string): string {
-  return `feed:version:${precinct}`;
+function feedCacheVersionKey(): string {
+  return "feed:version:syd";
 }
 
 function feedCacheBucket(now: Date): number {
@@ -105,8 +108,8 @@ function feedCacheFilterHash(filters: { radiusMeters: number; limit: number; int
   return (hash >>> 0).toString(36);
 }
 
-function buildFeedCacheKey(params: { precinct: string; geohash5: string; bucket: number; filterHash: string; version: number }): string {
-  return `feed:${params.precinct}:${params.geohash5}:${params.bucket}:${params.filterHash}:v${params.version}`;
+function buildFeedCacheKey(params: { geohash5: string; bucket: number; filterHash: string; version: number }): string {
+  return `feed:syd:${params.geohash5}:${params.bucket}:${params.filterHash}:v${params.version}`;
 }
 
 // Upstash's REST client round-trips cached values through JSON, which
@@ -152,7 +155,7 @@ function toResult(
 // CLAUDE.md. `deps.fetchVenues` is the only path that ever hits Postgres;
 // everything above it is cache bookkeeping around that one call.
 export async function getFeedWithCache(params: FeedCacheParams, deps: FeedCacheDeps): Promise<FeedCacheResult> {
-  const { precinct, lat, lng, radiusMeters = 2000, limit = 10, filters = [] } = params;
+  const { lat, lng, radiusMeters = 2000, limit = 10, filters = [] } = params;
   const now = params.now ?? new Date();
   const logger = deps.logger ?? consoleLogger;
   const recordMetric = deps.recordMetric ?? (() => {});
@@ -160,22 +163,22 @@ export async function getFeedWithCache(params: FeedCacheParams, deps: FeedCacheD
 
   let version: number | null = null;
   try {
-    const raw = await deps.redis.get<number | string>(feedCacheVersionKey(precinct));
+    const raw = await deps.redis.get<number | string>(feedCacheVersionKey());
     version = raw ? Number(raw) : 0;
   } catch (error) {
-    logger.warn("redis unreachable reading precinct version; falling through to Postgres", { precinct, error });
+    logger.warn("redis unreachable reading feed version; falling through to Postgres", { error });
   }
 
   if (version === null) {
     recordMetric("degraded");
-    const fresh = await deps.fetchVenues({ precinct, lat, lng, radiusMeters, limit, now, filters });
+    const fresh = await deps.fetchVenues({ lat, lng, radiusMeters, limit, now, filters });
     return toResult(sortByExactDistance(fresh, origin, limit), { cacheHit: false, degraded: true });
   }
 
   const geohash5 = geohashEncode(lat, lng, FEED_CACHE_GEOHASH_PRECISION);
   const bucket = feedCacheBucket(now);
   const filterHash = feedCacheFilterHash({ radiusMeters, limit, intentFilters: filters });
-  const key = buildFeedCacheKey({ precinct, geohash5, bucket, filterHash, version });
+  const key = buildFeedCacheKey({ geohash5, bucket, filterHash, version });
 
   let cached: FeedCacheVenue[] | null = null;
   try {
@@ -190,7 +193,7 @@ export async function getFeedWithCache(params: FeedCacheParams, deps: FeedCacheD
   }
 
   recordMetric("miss");
-  const fresh = await deps.fetchVenues({ precinct, lat, lng, radiusMeters, limit, now, filters });
+  const fresh = await deps.fetchVenues({ lat, lng, radiusMeters, limit, now, filters });
   try {
     await deps.redis.set(key, fresh, { ex: FEED_CACHE_TTL_SECONDS });
   } catch (error) {

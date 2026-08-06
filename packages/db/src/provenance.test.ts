@@ -102,7 +102,11 @@ describe("provenance: buildAttributeView", () => {
 describe("provenance: buildVenueCard", () => {
   it("shapes every attribute through AttributeView and scopes rows to the venue", () => {
     const otherVenueRow = row({ venueId: "venue-2", attributeKey: "price_tier", value: "$$" });
-    const card = buildVenueCard({ id: "venue-1", name: "The Lansdowne", precinct: "Chippendale" }, [...SEED_ROWS, otherVenueRow], NOW);
+    const card = buildVenueCard(
+      { id: "venue-1", name: "The Lansdowne", precinct: "Chippendale", source: "curator" },
+      [...SEED_ROWS, otherVenueRow],
+      NOW,
+    );
 
     expect(card.id).toBe("venue-1");
     expect(card.attributes).toHaveLength(SEED_ROWS.length);

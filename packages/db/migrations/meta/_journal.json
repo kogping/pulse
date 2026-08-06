@@ -71,6 +71,13 @@
       "when": 1785932632479,
       "tag": "0009_add_venue_hub_link_walk_seconds",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1785997139946,
+      "tag": "0010_venue_source",
+      "breakpoints": true
     }
   ]
 }

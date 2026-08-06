@@ -27,6 +27,11 @@ describe("getFlag", () => {
     expect(await getFlag("map_enabled")).toBe(true);
   });
 
+  it("defaults citywide_coverage_enabled to OFF", async () => {
+    get.mockResolvedValue(undefined);
+    expect(await getFlag("citywide_coverage_enabled")).toBe(false);
+  });
+
   it("defaults dynamic precinct flags to OFF", async () => {
     get.mockResolvedValue(undefined);
     expect(await getFlag(precinctFlag("newtown"))).toBe(false);

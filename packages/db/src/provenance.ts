@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "./client";
 import { curators, venueAttributes, venues } from "./schema";
 import { attributeConfidence } from "./freshness";
+import type { VenueSource } from "./schema";
 
 // The shared read layer for venue attributes shown outside the curator
 // console (F2.4). This is the ONLY exported shape in this file that carries
@@ -105,12 +106,17 @@ export interface VenueCardData {
   id: string;
   name: string;
   precinct: string;
+  // "google_places" means nothing here has been verified by a curator yet —
+  // surfaced explicitly (packages/ui VenueCard) rather than left implicit,
+  // per CLAUDE.md's "degrade honestly" invariant applied to curation status,
+  // not just badge staleness.
+  source: VenueSource;
   attributes: AttributeView[];
 }
 
 // Pure grouping/mapping step, no I/O.
 export function buildVenueCard(
-  venue: { id: string; name: string; precinct: string },
+  venue: { id: string; name: string; precinct: string; source: VenueSource },
   attributeRows: AttributeViewRow[],
   now: Date,
 ): VenueCardData {
@@ -118,6 +124,7 @@ export function buildVenueCard(
     id: venue.id,
     name: venue.name,
     precinct: venue.precinct,
+    source: venue.source,
     attributes: attributeRows.filter((row) => row.venueId === venue.id).map((row) => buildAttributeView(row, now)),
   };
 }
@@ -156,14 +163,14 @@ export async function fetchAttributeViewRows(venueIds: string[]): Promise<Attrib
 // return value.
 export async function getVenueForCard(venueId: string): Promise<VenueCardData | null> {
   const [venue] = await db
-    .select({ id: venues.id, name: venues.name, precinct: venues.precinct })
+    .select({ id: venues.id, name: venues.name, precinct: venues.precinct, source: venues.source })
     .from(venues)
     .where(eq(venues.id, venueId))
     .limit(1);
   if (!venue) return null;
 
   const attributeRows = await fetchAttributeViewRows([venueId]);
-  return buildVenueCard(venue, attributeRows, new Date());
+  return buildVenueCard({ ...venue, source: venue.source as VenueSource }, attributeRows, new Date());
 }
 
 // Dev/test-only guard: throws with a readable diff-style message the first

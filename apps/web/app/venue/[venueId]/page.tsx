@@ -17,7 +17,7 @@ export default async function VenuePage({ params, searchParams }: VenuePageProps
   if (!venue) notFound();
 
   const position = typeof query.position === "string" ? Number(query.position) : 0;
-  const source = typeof query.source === "string" ? query.source : "unknown";
+  const analyticsSource = typeof query.source === "string" ? query.source : "unknown";
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-[430px] flex-col gap-4 px-4 pb-safe-b pt-safe-t">
@@ -25,6 +25,10 @@ export default async function VenuePage({ params, searchParams }: VenuePageProps
         <h1 className="text-2xl font-semibold text-ink-50">{venue.name}</h1>
         <p className="text-sm text-ink-300">{venue.precinct}</p>
       </div>
+
+      {venue.source === "google_places" ? (
+        <p className="text-xs text-ink-400">Listing from Google — nothing verified by a curator yet</p>
+      ) : null}
 
       {venue.curatorPitch ? <p className="text-base text-ink-100">{venue.curatorPitch}</p> : null}
 
@@ -38,7 +42,7 @@ export default async function VenuePage({ params, searchParams }: VenuePageProps
 
       <TransportSlot venueId={venue.id} />
 
-      <VenueAnalytics venueId={venue.id} position={position} source={source} />
+      <VenueAnalytics venueId={venue.id} position={position} source={analyticsSource} />
     </main>
   );
 }

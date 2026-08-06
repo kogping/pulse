@@ -6,7 +6,8 @@ import { get } from "@vercel/edge-config";
 export type StaticFlagName =
   | "transport_live_enabled"
   | "map_enabled"
-  | "accessibility_filter_enabled";
+  | "accessibility_filter_enabled"
+  | "citywide_coverage_enabled";
 
 export type PrecinctFlagName = `precinct_${string}_enabled`;
 
@@ -24,11 +25,16 @@ export function precinctFlag(precinctId: string): PrecinctFlagName {
 // default OFF for the same reason: an un-launched precinct should stay
 // invisible until someone flips it on. The map is default ON — it's a
 // client-only affordance with a lazy-loaded dependency, so it degrades to a
-// no-op rather than a wrong answer.
+// no-op rather than a wrong answer. citywide_coverage_enabled defaults OFF:
+// it switches /api/location/resolve from the legacy 2-precinct geofence to
+// city-wide resolution (see apps/web/app/api/location/resolve/route.ts) —
+// an Edge Config outage must not silently widen coverage past what's been
+// deliberately launched.
 const STATIC_DEFAULTS: Record<StaticFlagName, boolean> = {
   transport_live_enabled: false,
   map_enabled: true,
   accessibility_filter_enabled: false,
+  citywide_coverage_enabled: false,
 };
 
 const PRECINCT_FLAG_PATTERN = /^precinct_.+_enabled$/;

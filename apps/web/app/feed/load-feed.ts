@@ -3,6 +3,10 @@ import { getFeedWithCache, type FeedCacheLogger, type FeedCacheMetricEvent } fro
 import { runRelaxationLadder, type RelaxationResult } from "./relaxation";
 
 export interface LoadFeedParams {
+  /** No longer used to filter candidates — the feed is city-wide (see
+   *  feed.ts's candidateAndOpenNowCte). Kept on the type because callers
+   *  (the feed API route, the page) still carry a display label alongside
+   *  lat/lng; loadFeed itself ignores it. */
   precinct: string;
   lat: number;
   lng: number;
@@ -27,7 +31,7 @@ export interface LoadFeedResult extends RelaxationResult {
 // both the API route and the feed page assemble these dependencies, so
 // neither can drift on how a rung's radius/filters map onto real reads.
 export async function loadFeed(params: LoadFeedParams, deps: LoadFeedDeps = {}): Promise<LoadFeedResult> {
-  const { precinct, lat, lng, limit, now, filters } = params;
+  const { lat, lng, limit, now, filters } = params;
 
   const venueLocations: Record<string, { lat: number; lng: number }> = {};
 
@@ -36,15 +40,15 @@ export async function loadFeed(params: LoadFeedParams, deps: LoadFeedDeps = {}):
     {
       fetchVenues: async ({ radiusMeters, filters: rungFilters }) => {
         const { venues, locations } = await getFeedWithCache(
-          { precinct, lat, lng, radiusMeters, limit, now, filters: rungFilters },
+          { lat, lng, radiusMeters, limit, now, filters: rungFilters },
           { redis, fetchVenues: getFeedVenuesWithLocation, logger: deps.logger, recordMetric: deps.recordMetric },
         );
         Object.assign(venueLocations, locations);
         return venues;
       },
       countVenuesPerFilter: ({ radiusMeters, filters: rungFilters }) =>
-        countVenuesPerFilter({ precinct, lat, lng, radiusMeters, now, filters: rungFilters }),
-      fetchClosingSoon: ({ radiusMeters }) => getClosingSoonVenues({ precinct, lat, lng, radiusMeters, limit, now }),
+        countVenuesPerFilter({ lat, lng, radiusMeters, now, filters: rungFilters }),
+      fetchClosingSoon: ({ radiusMeters }) => getClosingSoonVenues({ lat, lng, radiusMeters, limit, now }),
     },
   );
 

@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { __resetEnvCacheForTests, getDatabaseEnv, getEnv, getMapboxEnv, getUpstashEnv } from "./env";
+import { __resetEnvCacheForTests, getDatabaseEnv, getEnv, getGooglePlacesEnv, getMapboxEnv, getUpstashEnv } from "./env";
 
 const VALID = {
   DATABASE_URL: "postgresql://user:pass@host.ap-southeast-2.aws.neon.tech/neondb?sslmode=require",
   UPSTASH_REDIS_REST_URL: "https://example.upstash.io",
   UPSTASH_REDIS_REST_TOKEN: "token",
   MAPBOX_TOKEN: "token",
+  GOOGLE_PLACES_API_KEY: "token",
 };
 
 function stubEnv(overrides: Partial<typeof VALID> = {}) {
@@ -51,6 +52,12 @@ describe("env", () => {
   it("getEnv still validates everything when a caller wants it all at once", () => {
     stubEnv({ MAPBOX_TOKEN: "" });
     expect(() => getEnv()).toThrow();
+  });
+
+  it("getGooglePlacesEnv succeeds independently of the other three", () => {
+    stubEnv({ MAPBOX_TOKEN: "" });
+    expect(() => getMapboxEnv()).toThrow();
+    expect(getGooglePlacesEnv().GOOGLE_PLACES_API_KEY).toBe(VALID.GOOGLE_PLACES_API_KEY);
   });
 
   it("each getter caches independently, so a later fix to one var doesn't require re-reading the others", () => {

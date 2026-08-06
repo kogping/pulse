@@ -16,6 +16,7 @@
     "audit:sample": "tsx scripts/audit-sample.ts",
     "import:venues": "tsx scripts/import-venues.ts",
     "gtfs:import": "tsx scripts/gtfs-import.ts",
+    "places:import": "tsx scripts/places-import.ts",
     "typecheck:scripts": "tsc -p tsconfig.scripts.json",
     "test:scripts": "vitest run --config vitest.scripts.config.ts"
   },

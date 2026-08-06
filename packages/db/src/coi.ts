@@ -1,7 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "./client";
-import { curatorVenueInterests, pendingEdits, venueAttributes, venues, verificationEvents } from "./schema";
-import { bumpPrecinctFeedCacheVersion } from "./feed-cache";
+import { curatorVenueInterests, pendingEdits, venueAttributes, verificationEvents } from "./schema";
+import { bumpFeedCacheVersion } from "./feed-cache";
 import { redis } from "./redis";
 
 // Curator conflict-of-interest declaration and the pending-edit approval
@@ -22,16 +22,14 @@ export interface PendingEditRecord {
   createdAt: Date;
 }
 
-// Best-effort feed-cache invalidation for a write against `venueId`. Looks
-// up the venue's precinct (neither EditRequest nor the pending_edits row
-// carries it) and bumps that precinct's Redis version counter — see
-// feed-cache.ts. Never throws: a Redis outage here must not fail the
-// attribute write that triggered it.
+// Best-effort feed-cache invalidation for a write against `venueId`. Bumps
+// the single global Redis version counter — see feed-cache.ts; the feed is
+// city-wide now, so there's no narrower per-precinct scope to invalidate.
+// Never throws: a Redis outage here must not fail the attribute write that
+// triggered it.
 async function invalidateFeedCacheForVenue(venueId: string): Promise<void> {
   try {
-    const [venue] = await db.select({ precinct: venues.precinct }).from(venues).where(eq(venues.id, venueId)).limit(1);
-    if (!venue) return;
-    await bumpPrecinctFeedCacheVersion(redis, venue.precinct);
+    await bumpFeedCacheVersion(redis);
   } catch (error) {
     console.warn(`[feed-cache] failed to invalidate for venue "${venueId}"`, error);
   }

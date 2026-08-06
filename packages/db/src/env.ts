@@ -25,14 +25,20 @@ const mapboxEnvSchema = z.object({
   MAPBOX_TOKEN: z.string().min(1),
 });
 
+const googlePlacesEnvSchema = z.object({
+  GOOGLE_PLACES_API_KEY: z.string().min(1),
+});
+
 export type DatabaseEnv = z.infer<typeof databaseEnvSchema>;
 export type UpstashEnv = z.infer<typeof upstashEnvSchema>;
 export type MapboxEnv = z.infer<typeof mapboxEnvSchema>;
-export type Env = DatabaseEnv & UpstashEnv & MapboxEnv;
+export type GooglePlacesEnv = z.infer<typeof googlePlacesEnvSchema>;
+export type Env = DatabaseEnv & UpstashEnv & MapboxEnv & GooglePlacesEnv;
 
 let databaseCached: DatabaseEnv | undefined;
 let upstashCached: UpstashEnv | undefined;
 let mapboxCached: MapboxEnv | undefined;
+let googlePlacesCached: GooglePlacesEnv | undefined;
 
 // Parsed lazily on first use rather than at module import time — see
 // client.ts/redis.ts/mapbox.ts, which each call only the getter for the
@@ -65,12 +71,23 @@ export function getMapboxEnv(): MapboxEnv {
   return mapboxCached;
 }
 
+// Only ever called by scripts/places-import.ts (a GitHub Actions job, never
+// a Vercel build/request path) — kept as its own narrow getter for the same
+// reason as the others above: a missing Places key must fail that one
+// script, not any unrelated getEnv() caller.
+export function getGooglePlacesEnv(): GooglePlacesEnv {
+  if (!googlePlacesCached) {
+    googlePlacesCached = googlePlacesEnvSchema.parse({ GOOGLE_PLACES_API_KEY: process.env.GOOGLE_PLACES_API_KEY });
+  }
+  return googlePlacesCached;
+}
+
 // Convenience for a caller that genuinely wants every credential validated
 // at once (e.g. a startup health check, or scripts/ run against a fully
 // configured environment) — each field's failure domain is still the
 // narrow getter above; nothing internal to this package calls this.
 export function getEnv(): Env {
-  return { ...getDatabaseEnv(), ...getUpstashEnv(), ...getMapboxEnv() };
+  return { ...getDatabaseEnv(), ...getUpstashEnv(), ...getMapboxEnv(), ...getGooglePlacesEnv() };
 }
 
 /** Test-only: clears the per-concern caches so tests don't leak state across cases. */
@@ -78,4 +95,5 @@ export function __resetEnvCacheForTests(): void {
   databaseCached = undefined;
   upstashCached = undefined;
   mapboxCached = undefined;
+  googlePlacesCached = undefined;
 }

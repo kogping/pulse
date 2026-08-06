@@ -11,6 +11,7 @@ function relaxationResult(overrides: Partial<LoadFeedResult> = {}): LoadFeedResu
         id: "v1",
         name: "The Lansdowne",
         precinct: "Chippendale",
+        source: "curator",
         attributes: [
           { key: "cover_charge", value: "$15", confidence: "fresh", lastVerifiedAt: new Date(), verifiedBy },
           { key: "dress_code", confidence: "unconfirmed" },
@@ -71,21 +72,21 @@ describe("Home", () => {
   it("renders the relaxation disclosure banner when the ladder had to widen", async () => {
     vi.mocked(loadFeed).mockResolvedValueOnce(
       relaxationResult({
-        rung: { kind: "widen_radius", radiusMeters: 1200 },
-        disclosure: "Nothing exact — widening to 1.2km",
-        attempts: [{ kind: "exact" }, { kind: "widen_radius", radiusMeters: 1200 }],
+        rung: { kind: "widen_radius", radiusMeters: 1500 },
+        disclosure: "Nothing exact — widening to 1.5km",
+        attempts: [{ kind: "exact" }, { kind: "widen_radius", radiusMeters: 1500 }],
       }),
     );
 
     const html = renderToStaticMarkup(await Home({ searchParams: Promise.resolve(RESOLVED_LOCATION) }));
-    expect(html).toContain("widening to 1.2km");
+    expect(html).toContain("widening to 1.5km");
   });
 
   it("renders closing-soon venues only in the labelled section below the fold, never the main feed", async () => {
     vi.mocked(loadFeed).mockResolvedValueOnce(
       relaxationResult({
-        venues: [{ id: "v1", name: "The Lansdowne", precinct: "Chippendale", attributes: [] }],
-        closingSoon: [{ id: "v2", name: "Last Drinks Bar", precinct: "Chippendale", attributes: [] }],
+        venues: [{ id: "v1", name: "The Lansdowne", precinct: "Chippendale", source: "curator", attributes: [] }],
+        closingSoon: [{ id: "v2", name: "Last Drinks Bar", precinct: "Chippendale", source: "curator", attributes: [] }],
         rung: { kind: "closing_soon" },
         disclosure: "Nothing open long enough nearby — these venues close within 45 minutes",
         attempts: [{ kind: "exact" }, { kind: "closing_soon" }],
