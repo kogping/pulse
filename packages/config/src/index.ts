@@ -1,2 +1,2 @@
-export type { FlagName, PrecinctFlagName, StaticFlagName } from "./flags";
-export { getFlag, precinctFlag } from "./flags";
+export type { FlagName } from "./flags";
+export { getFlag } from "./flags";

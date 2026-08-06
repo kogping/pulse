@@ -81,8 +81,6 @@ export {
 export type { AuditCandidateRow, PendingAuditItem, SampledAuditItem, WeeklyAccuracy } from "./audit";
 export { PRECINCT_REGISTRY } from "./precincts";
 export type { PrecinctDef } from "./precincts";
-export { recordOutOfCoverageSignup } from "./out-of-coverage";
-export type { RecordOutOfCoverageSignupInput } from "./out-of-coverage";
 export { insertCorrectionFlag } from "./correction-flags";
 export type { InsertCorrectionFlagInput, InsertCorrectionFlagResult } from "./correction-flags";
 export {

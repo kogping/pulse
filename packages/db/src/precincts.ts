@@ -2,10 +2,9 @@
 // (packages/db/scripts/seed.ts), the location-resolution API
 // (apps/web/app/api/location/resolve), and the precinct picker
 // (apps/web/app/api/precincts) all read from this one list so a precinct's
-// id/name/hub coordinates can't drift between them. Whether a registered
-// precinct is actually live is a separate question, answered at request
-// time by @pulse/config's precinctFlag() against Edge Config — this list is
-// "precincts Pulse knows how to serve", not "precincts currently enabled".
+// id/name/hub coordinates can't drift between them. Coverage is city-wide:
+// every registered precinct is servable, and the label is cosmetic (see
+// apps/web/app/api/location/resolve/route.ts).
 export interface PrecinctDef {
   id: string;
   name: string;

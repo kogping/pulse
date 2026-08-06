@@ -2,9 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { fetchEnabledPrecincts, resolveLocation, type PrecinctOption } from "./api";
+import { fetchPrecincts, resolveLocation, type PrecinctOption } from "./api";
 import { PrecinctPicker } from "./precinct-picker";
-import { OutOfCoverageScreen } from "./out-of-coverage-screen";
 import { readRememberedPrecinct, rememberPrecinct, forgetRememberedPrecinct } from "./storage";
 import { geohashDecode, geohashEncode } from "../api/feed/geohash";
 
@@ -25,7 +24,7 @@ function toGeohash6Cell(lat: number, lng: number): { lat: number; lng: number } 
 // F1.1's slow-geolocation branch renders the picker instead of a spinner.
 const GEOLOCATION_SOFT_TIMEOUT_MS = 3_000;
 
-type GateState = "resolving" | "picker" | "out_of_coverage";
+type GateState = "resolving" | "picker";
 
 export interface LocationGateProps {
   // Preserves a `?filters=` the visitor arrived with (e.g. a shared link)
@@ -39,12 +38,11 @@ function targetHref(precinct: PrecinctOption, lat: number, lng: number, filtersP
   return `/?${params.toString()}`;
 }
 
-// F1.1's four non-happy-path branches for resolving "where is this visitor":
-// granted+fast → nearest enabled precinct; denied/unavailable/slow → precinct
-// picker; resolved-but-nowhere-enabled-nearby → out-of-coverage screen. The
-// happy path (granted, resolves inside coverage) never renders anything
-// here — it replaces the URL with a precinct-qualified one and Home
-// re-renders server-side from there.
+// F1.1's non-happy-path branch for resolving "where is this visitor":
+// granted+fast → nearest precinct; denied/unavailable/slow → precinct
+// picker. Coverage is city-wide, so a granted geolocation always resolves —
+// the happy path never renders anything here — it replaces the URL with a
+// precinct-qualified one and Home re-renders server-side from there.
 export function LocationGate({ filtersParam }: LocationGateProps) {
   const router = useRouter();
   const [state, setState] = useState<GateState>("resolving");
@@ -59,7 +57,7 @@ export function LocationGate({ filtersParam }: LocationGateProps) {
       if (cancelled || bailedToPicker.current) return;
       bailedToPicker.current = true;
       setState("picker");
-      fetchEnabledPrecincts().then((options) => {
+      fetchPrecincts().then((options) => {
         if (cancelled) return;
         setPrecincts(options);
         setPrecinctsLoading(false);
@@ -81,10 +79,6 @@ export function LocationGate({ filtersParam }: LocationGateProps) {
         rememberPrecinct({ id: result.precinct.id, name: result.precinct.name });
         const cell = toGeohash6Cell(latitude, longitude);
         router.replace(targetHref(result.precinct, cell.lat, cell.lng, filtersParam));
-        return;
-      }
-      if (result.status === "out_of_coverage") {
-        setState("out_of_coverage");
         return;
       }
       // Transient resolve failure — fall back to letting the visitor pick.
@@ -117,7 +111,7 @@ export function LocationGate({ filtersParam }: LocationGateProps) {
     // own permission prompt is never re-triggered on repeat visits.
     const remembered = readRememberedPrecinct();
     if (remembered) {
-      fetchEnabledPrecincts().then((options) => {
+      fetchPrecincts().then((options) => {
         if (cancelled) return;
         const stillEnabled = options.find((option) => option.id === remembered.id);
         if (stillEnabled) {
@@ -145,7 +139,6 @@ export function LocationGate({ filtersParam }: LocationGateProps) {
     router.replace(targetHref(precinct, precinct.lat, precinct.lng, filtersParam));
   }
 
-  if (state === "out_of_coverage") return <OutOfCoverageScreen />;
   if (state === "picker") return <PrecinctPicker precincts={precincts} loading={precinctsLoading} onSelect={handleSelect} />;
 
   return (
