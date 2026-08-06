@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { IntentFilterId, VenueCardData } from "@pulse/db";
+import type { FeedVenue, IntentFilterId } from "@pulse/db";
 import { INTENT_FILTER_REGISTRY_BY_ID } from "@pulse/db";
 import {
   RADIUS_LADDER_METERS,
@@ -9,11 +9,19 @@ import {
   runRelaxationLadder,
 } from "./relaxation";
 
-function venue(id: string): VenueCardData {
-  return { id, name: `Venue ${id}`, precinct: "surry-hills", source: "curator", attributes: [], photo: { kind: "none" } };
+function venue(id: string): FeedVenue {
+  return {
+    id,
+    name: `Venue ${id}`,
+    precinct: "surry-hills",
+    source: "curator",
+    attributes: [],
+    photo: { kind: "none" },
+    availability: { status: "open", closesAt: "23:00", spansMidnight: false },
+  };
 }
 
-function venues(ids: string[]): VenueCardData[] {
+function venues(ids: string[]): FeedVenue[] {
   return ids.map(venue);
 }
 
@@ -130,6 +138,33 @@ describe("runRelaxationLadder", () => {
     expect(deps.countVenuesPerFilter).not.toHaveBeenCalled();
     expect(result.venues).toEqual([]);
     expect(result.closingSoon.map((v) => v.id)).toEqual(["closing-1"]);
+  });
+
+  it("F1.8: skips the closing_soon fallback rung when openNowOnly is false, returning whatever the last rung found", async () => {
+    const deps = makeDeps({
+      responses: {}, // every radius comes up empty
+      closingSoon: ["closing-1"],
+    });
+
+    const result = await runRelaxationLadder({ filters: [], openNowOnly: false }, deps);
+
+    expect(result.attempts).toEqual([
+      { kind: "exact" },
+      { kind: "widen_radius", radiusMeters: 1500 },
+      { kind: "widen_radius", radiusMeters: 3000 },
+      { kind: "widen_radius", radiusMeters: 6000 },
+    ]);
+    expect(result.rung).toEqual({ kind: "widen_radius", radiusMeters: 6000 });
+    expect(deps.fetchClosingSoon).not.toHaveBeenCalled();
+    expect(result.closingSoon).toEqual([]);
+  });
+
+  it("F1.8: threads openNowOnly through to every fetchVenues call", async () => {
+    const deps = makeDeps({ responses: { "800:": ["a", "b", "c"] } });
+
+    await runRelaxationLadder({ filters: [], openNowOnly: false }, deps);
+
+    expect(deps.fetchVenues).toHaveBeenCalledWith(expect.objectContaining({ openNowOnly: false }));
   });
 
   it("radius ladder matches the documented 800 -> 1500 -> 3000 -> 6000 sequence", () => {

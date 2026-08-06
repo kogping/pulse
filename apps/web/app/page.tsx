@@ -3,10 +3,12 @@ import { EmptyState, FilterChip, VenueCard } from "@pulse/ui";
 import {
   ATTRIBUTE_REGISTRY_BY_KEY,
   INTENT_FILTER_REGISTRY,
+  formatClockTime,
   parseIntentFilterIds,
   type AttributeView,
+  type FeedVenue,
+  type FeedVenueAvailability,
   type IntentFilterId,
-  type VenueCardData,
 } from "@pulse/db";
 import { getFlag } from "@pulse/config";
 import { FeedAnalytics } from "./feed/feed-analytics";
@@ -19,7 +21,23 @@ function isLastEntry(attribute: AttributeView): boolean {
   return attribute.key === "last_entry_tonight";
 }
 
-function venueCardProps(venue: VenueCardData) {
+// F1.8: only rendered once the visitor has toggled "Open now" off — with
+// the default (openNowOnly:true) feed, every venue is guaranteed open, so
+// this label would be redundant noise on every card. "closed" with a null
+// opensAt renders bare "Closed" rather than guessing a reopening time — see
+// tonightAvailability's doc comment (packages/db/src/feed.ts).
+function availabilityLabel(availability: FeedVenueAvailability): string {
+  switch (availability.status) {
+    case "open":
+      return `Open now — until ${formatClockTime(availability.closesAt)}`;
+    case "closed":
+      return availability.opensAt ? `Closed — opens ${formatClockTime(availability.opensAt)}` : "Closed";
+    case "unknown":
+      return "Hours unknown";
+  }
+}
+
+function venueCardProps(venue: FeedVenue, openNowOnly: boolean) {
   const lastEntry = venue.attributes.find(isLastEntry);
   const badgeAttributes = venue.attributes
     .filter((attribute) => !isLastEntry(attribute))
@@ -45,6 +63,7 @@ function venueCardProps(venue: VenueCardData) {
         ? { mode: "scheduled" as const, label: `Last entry ${lastEntry.value}` }
         : undefined,
     photo,
+    availabilityLabel: openNowOnly ? undefined : availabilityLabel(venue.availability),
   };
 }
 
@@ -52,12 +71,12 @@ function venueCardProps(venue: VenueCardData) {
 // entirely on map_enabled — when the flag is off the toggle control (and
 // mapbox-gl, via list-map-toggle.tsx's dynamic import) never renders at
 // all, not merely a disabled button.
-function renderVenueList(relaxation: LoadFeedResult, mapEnabled: boolean) {
+function renderVenueList(relaxation: LoadFeedResult, mapEnabled: boolean, openNowOnly: boolean) {
   const list = (
     <div className="flex flex-col gap-4">
       {relaxation.venues.map((venue, index) => (
         <Link key={venue.id} href={`/venue/${venue.id}?position=${index}&source=feed`}>
-          <VenueCard {...venueCardProps(venue)} />
+          <VenueCard {...venueCardProps(venue, openNowOnly)} />
         </Link>
       ))}
     </div>
@@ -75,12 +94,23 @@ function renderVenueList(relaxation: LoadFeedResult, mapEnabled: boolean) {
   return <ListMapToggle pins={pins}>{list}</ListMapToggle>;
 }
 
-// F1.6: the active set lives in the URL (as a comma-separated `filters`
-// param) so a filtered feed is shareable and back/forward works without
-// any client-side state.
-function filterHref(active: readonly IntentFilterId[], toggled: IntentFilterId): string {
+// F1.6/F1.8: both the intent filters and the openNow toggle live in the URL
+// (as a comma-separated `filters` param and a plain `openNow=0` flag) so a
+// filtered/toggled feed is shareable and back/forward works without any
+// client-side state. precinct/lat/lng are deliberately omitted — landing
+// here without them just re-renders LocationGate, which restores them from
+// the remembered precinct (see location/location-gate.tsx) and redirects.
+function feedHref(filters: readonly IntentFilterId[], openNowOnly: boolean): string {
+  const params = new URLSearchParams();
+  if (filters.length > 0) params.set("filters", filters.join(","));
+  if (!openNowOnly) params.set("openNow", "0");
+  const qs = params.toString();
+  return qs ? `/?${qs}` : "/";
+}
+
+function filterHref(active: readonly IntentFilterId[], toggled: IntentFilterId, openNowOnly: boolean): string {
   const next = active.includes(toggled) ? active.filter((id) => id !== toggled) : [...active, toggled];
-  return next.length > 0 ? `/?filters=${next.join(",")}` : "/";
+  return feedHref(next, openNowOnly);
 }
 
 interface HomeProps {
@@ -120,6 +150,13 @@ export default async function Home({ searchParams }: HomeProps) {
   const activeFilters = accessibilityEnabled ? requestedFilters : requestedFilters.filter((id) => id !== "accessible");
   const visibleFilterDefs = INTENT_FILTER_REGISTRY.filter((def) => def.id !== "accessible" || accessibilityEnabled);
 
+  // F1.8: "Open now" defaults on (F1.1-F1.4's existing behaviour) — only
+  // `openNow=0` turns it off. Anything else in the param (missing, "1",
+  // garbage) is treated as "on", so a malformed/stale link degrades to the
+  // safer default rather than silently showing closed venues.
+  const openNowParam = typeof params.openNow === "string" ? params.openNow : undefined;
+  const openNowOnly = openNowParam !== "0";
+
   // F1.5: `_mapEnabled` is a test-only override for map.spec.ts, honoured
   // only under FEED_TEST_MODE (same convention as loadFeed's `_testNow` —
   // see api/feed/route.ts) so an e2e run can assert the flag-off behaviour
@@ -141,7 +178,8 @@ export default async function Home({ searchParams }: HomeProps) {
     lat,
     lng,
     now,
-    filters: [...activeFilters, "open_now"],
+    filters: activeFilters,
+    openNowOnly,
   });
 
   return (
@@ -153,13 +191,17 @@ export default async function Home({ searchParams }: HomeProps) {
       <div className="flex gap-2 overflow-x-auto">
         {visibleFilterDefs.map((def) =>
           def.id === "open_now" ? (
-            <FilterChip key={def.id} label={def.label} selected />
+            // F1.8: the one chip that toggles OFF, not off-then-on — every
+            // other chip's href adds/removes itself from the AND-composed
+            // `filters` list; this one flips openNowOnly instead, since
+            // it's enforced by the base query, not an attribute filter.
+            <FilterChip key={def.id} label={def.label} selected={openNowOnly} href={feedHref(activeFilters, !openNowOnly)} />
           ) : (
             <FilterChip
               key={def.id}
               label={def.label}
               selected={activeFilters.includes(def.id)}
-              href={filterHref(activeFilters, def.id)}
+              href={filterHref(activeFilters, def.id, openNowOnly)}
             />
           ),
         )}
@@ -170,7 +212,7 @@ export default async function Home({ searchParams }: HomeProps) {
       ) : null}
 
       {relaxation.venues.length > 0 ? (
-        renderVenueList(relaxation, mapEnabled)
+        renderVenueList(relaxation, mapEnabled, openNowOnly)
       ) : (
         <EmptyState heading="Nothing nearby right now" body="Try clearing a filter or checking back later." />
       )}
@@ -186,7 +228,7 @@ export default async function Home({ searchParams }: HomeProps) {
           <div className="flex flex-col gap-4">
             {relaxation.closingSoon.map((venue, index) => (
               <Link key={venue.id} href={`/venue/${venue.id}?position=${index}&source=closing_soon`}>
-                <VenueCard {...venueCardProps(venue)} />
+                <VenueCard {...venueCardProps(venue, true)} />
               </Link>
             ))}
           </div>

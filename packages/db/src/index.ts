@@ -54,9 +54,12 @@ export {
   getFeedVenues,
   getFeedVenuesWithLocation,
   isOpenWithBuffer,
+  tonightAvailability,
 } from "./feed";
 export type {
   CountVenuesPerFilterParams,
+  FeedVenue,
+  FeedVenueAvailability,
   FeedVenueWithLocation,
   GetFeedVenuesParams,
   VenueHoursInput,

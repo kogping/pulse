@@ -16,9 +16,14 @@ export interface VenueCardProps {
    *  /api/venue-photo proxy. `attribution` renders as an overlay caption —
    *  required by the Places API ToS whenever the photo came from Google. */
   photo?: { src: string; attribution: string | null };
+  /** F1.8: precomputed by the caller from FeedVenueAvailability — only ever
+   *  passed when the visitor has toggled "Open now" off (with it on, every
+   *  card is guaranteed open, so this is omitted rather than shown on
+   *  every card as redundant noise). */
+  availabilityLabel?: string;
 }
 
-export function VenueCard({ name, precinct, source, attributes, lastEntry, photo }: VenueCardProps) {
+export function VenueCard({ name, precinct, source, attributes, lastEntry, photo, availabilityLabel }: VenueCardProps) {
   return (
     <article className="flex flex-col gap-3 rounded-xl bg-ink-900 p-4">
       {photo ? (
@@ -33,6 +38,7 @@ export function VenueCard({ name, precinct, source, attributes, lastEntry, photo
         <h3 className="text-lg font-semibold text-ink-50">{name}</h3>
         <p className="text-sm text-ink-300">{precinct}</p>
       </div>
+      {availabilityLabel ? <p className="text-xs text-ink-300">{availabilityLabel}</p> : null}
       {source === "google_places" ? (
         <p className="text-xs text-ink-400">Listing from Google — nothing verified by a curator yet</p>
       ) : null}

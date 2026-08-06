@@ -1,12 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
-import type { VenueCardData } from "@pulse/db";
+import type { FeedVenue } from "@pulse/db";
 import { getFeedWithCache, type FeedCacheRedisClient, type FeedCacheVenue, type FetchFeedVenues } from "./feed-cache";
 import { geohashEncode } from "./geohash";
 
 const PRECINCT = "surry-hills";
 
-function venue(id: string): VenueCardData {
-  return { id, name: `Venue ${id}`, precinct: PRECINCT, source: "curator", attributes: [], photo: { kind: "none" } };
+function venue(id: string): FeedVenue {
+  return {
+    id,
+    name: `Venue ${id}`,
+    precinct: PRECINCT,
+    source: "curator",
+    attributes: [],
+    photo: { kind: "none" },
+    availability: { status: "open", closesAt: "23:00", spansMidnight: false },
+  };
 }
 
 // In-memory stand-in for the Upstash REST client. `incr` mirrors
@@ -141,7 +149,7 @@ describe("feed cache", () => {
     // returns Postgres's real Date objects straight through.
     const redis = new FakeRedis();
     const lastVerifiedAt = new Date("2026-08-05T20:00:00+10:00");
-    const venueWithBadge: VenueCardData = {
+    const venueWithBadge: FeedVenue = {
       id: "a",
       name: "Venue a",
       precinct: PRECINCT,
@@ -157,6 +165,7 @@ describe("feed cache", () => {
         { key: "dress_code", confidence: "unconfirmed" },
       ],
       photo: { kind: "none" },
+      availability: { status: "open", closesAt: "23:00", spansMidnight: false },
     };
     const fetchVenues = fetchVenuesReturning([{ venue: venueWithBadge, lat: -33.88, lng: 151.2 }]);
     const now = new Date("2026-08-05T22:00:00+10:00");

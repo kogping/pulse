@@ -1,8 +1,8 @@
-import { sql as drizzleSql } from "drizzle-orm";
+import { inArray, sql as drizzleSql } from "drizzle-orm";
 import { db } from "./client";
 import { buildVenueCard, fetchAttributeViewRows, type VenueCardData } from "./provenance";
 import { INTENT_FILTER_REGISTRY_BY_ID, NO_COVER_VALUE_TOKENS, type IntentFilterId } from "./intent-filters";
-import type { VenueSource } from "./schema";
+import { venueHours, type VenueSource } from "./schema";
 
 // F1.1-F1.4: the core "what's good tonight" query. Never show a venue
 // that's closed or about to close (invariant: degrade honestly) — that
@@ -124,6 +124,59 @@ export function isOpenWithBuffer(
   }
 
   return false;
+}
+
+// F1.8: when a visitor toggles "Open now" off, closed and unconfirmed-hours
+// venues can appear in the feed too — this is what labels each one honestly
+// instead of leaving it looking indistinguishable from an open venue
+// (CLAUDE.md invariant #5 applied to feed display, not just live transport).
+// Deliberately does NOT apply FEED_CLOSING_BUFFER_MINUTES — that's a
+// feed-*inclusion* rule for the default (open-now-only) mode, not a display
+// fact about whether a venue happens to be open right now.
+export type FeedVenueAvailability =
+  | { status: "open"; closesAt: string; spansMidnight: boolean }
+  // `opensAt` is set only when the venue opens later *today* — otherwise
+  // null, since guessing which future day it next opens would risk showing
+  // a confident wrong time (same "silence beats a confident wrong number"
+  // principle as CLAUDE.md invariant #5).
+  | { status: "closed"; opensAt: string | null }
+  // No venue_hours rows at all (typically a scripts/places-import.ts venue
+  // never claimed by a curator) — never inferred as open or closed.
+  | { status: "unknown" };
+
+export function tonightAvailability(hours: readonly VenueHoursInput[], now: Date): FeedVenueAvailability {
+  if (hours.length === 0) return { status: "unknown" };
+
+  const { dayOfWeek: todayDow, minutesOfDay: nowMinutes } = sydneyParts(now);
+  const yesterdayDow = (todayDow + 6) % 7;
+
+  const todayRow = hours.find((h) => h.dayOfWeek === todayDow && !h.isClosed && h.opensAt !== null && h.closesAt !== null);
+  const yesterdayRow = hours.find(
+    (h) => h.dayOfWeek === yesterdayDow && !h.isClosed && h.opensAt !== null && h.closesAt !== null,
+  );
+
+  if (todayRow) {
+    const opensMin = timeStringToMinutes(todayRow.opensAt!);
+    const closesMin = timeStringToMinutes(todayRow.closesAt!);
+    const spansMidnight = closesMin <= opensMin;
+    const closingMinutes = spansMidnight ? closesMin + 1440 : closesMin;
+    if (nowMinutes >= opensMin && nowMinutes < closingMinutes) {
+      return { status: "open", closesAt: todayRow.closesAt!, spansMidnight };
+    }
+    if (nowMinutes < opensMin) {
+      return { status: "closed", opensAt: todayRow.opensAt! };
+    }
+  }
+
+  if (yesterdayRow) {
+    const opensMin = timeStringToMinutes(yesterdayRow.opensAt!);
+    const closesMin = timeStringToMinutes(yesterdayRow.closesAt!);
+    if (closesMin <= opensMin && nowMinutes < closesMin) {
+      return { status: "open", closesAt: yesterdayRow.closesAt!, spansMidnight: true };
+    }
+  }
+
+  return { status: "closed", opensAt: null };
 }
 
 // Hand-written SQL port of isOpenWithBuffer's three cases (same-day
@@ -248,19 +301,26 @@ function sqlStringLiteral(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
 }
 
-function scoreSqlExpression() {
+// `includeOpenPenalty`: only relevant once `open_now` is a LEFT JOIN (i.e.
+// openNowOnly:false already admitted closed/unknown-hours venues) — a fixed
+// penalty far larger than any other weight combined, so a closed venue can
+// never outrank an open one purely on distance/tier/freshness, while still
+// ranking normally *among* the other closed venues.
+function scoreSqlExpression(includeOpenPenalty: boolean) {
   const tierCases = Object.entries(FEED_SCORING_WEIGHTS.qualityTier)
     .map(([tier, weight]) => `WHEN ${sqlStringLiteral(tier)} THEN ${weight}`)
     .join(" ");
   const sourceCases = Object.entries(FEED_SCORING_WEIGHTS.source)
     .map(([source, weight]) => `WHEN ${sqlStringLiteral(source)} THEN ${weight}`)
     .join(" ");
+  const openPenalty = includeOpenPenalty ? "+ CASE WHEN is_open_now THEN 0 ELSE -1000 END" : "";
 
   return drizzleSql.raw(`(
     ${FEED_SCORING_WEIGHTS.distance} * LEAST(normalised_distance, 1)
     + COALESCE(CASE quality_tier ${tierCases} ELSE 0 END, 0)
     + ${FEED_SCORING_WEIGHTS.freshness} * freshness_score
     + COALESCE(CASE source ${sourceCases} ELSE 0 END, 0)
+    ${openPenalty}
   )`);
 }
 
@@ -274,9 +334,19 @@ export interface GetFeedVenuesParams {
   radiusMeters?: number;
   limit?: number;
   now?: Date;
-  /** F1.6 intent filters, AND-composed. open_now is a no-op here since the
-   *  base query already enforces it unconditionally. */
+  /** F1.6 intent filters, AND-composed. open_now is never included here —
+   *  see openNowOnly below, a separate, explicit F1.8 toggle rather than an
+   *  attribute-style filter. */
   filters?: IntentFilterId[];
+  /** F1.8: defaults true (existing F1.1-F1.4 behaviour, unchanged) — only
+   *  venues open right now and not closing within FEED_CLOSING_BUFFER_MINUTES
+   *  are candidates at all. false admits every venue in radius regardless of
+   *  hours, each carrying its own FeedVenueAvailability so the UI can label
+   *  closed/unconfirmed ones honestly instead of hiding that fact. Unlike
+   *  the F1.6 filters, this is a visitor-initiated override, not something
+   *  the F1.7 relaxation ladder ever flips on its own — intent-filters.ts's
+   *  `droppable: false` on open_now still governs the ladder specifically. */
+  openNowOnly?: boolean;
 }
 
 interface FeedCandidateRow extends Record<string, unknown> {
@@ -300,7 +370,17 @@ interface FeedCandidateRow extends Record<string, unknown> {
 // truth) keeps them, since the cache's post-read exact-distance sort needs
 // real venue coordinates that the public VenueCardData shape doesn't carry.
 async function runFeedRankingQuery(params: GetFeedVenuesParams): Promise<FeedCandidateRow[]> {
-  const { lat, lng, radiusMeters = 2000, limit = 10, now = new Date(), filters = [] } = params;
+  const { lat, lng, radiusMeters = 2000, limit = 10, now = new Date(), filters = [], openNowOnly = true } = params;
+
+  // openNowOnly:true keeps the exact original INNER JOIN — every candidate
+  // is guaranteed open, no penalty term needed. openNowOnly:false LEFT JOINs
+  // instead so closed/unconfirmed-hours venues are admitted too, carrying
+  // an is_open_now flag the score expression uses to always rank them below
+  // open ones (see scoreSqlExpression).
+  const openNowJoin = openNowOnly
+    ? drizzleSql`JOIN open_now ON open_now.id = cv.id`
+    : drizzleSql`LEFT JOIN open_now ON open_now.id = cv.id`;
+  const isOpenNowColumn = openNowOnly ? drizzleSql`true AS is_open_now` : drizzleSql`(open_now.id IS NOT NULL) AS is_open_now`;
 
   const result = await db.execute<FeedCandidateRow>(drizzleSql`
     WITH ${candidateAndOpenNowCte({ lat, lng, radiusMeters, now })},
@@ -329,10 +409,11 @@ async function runFeedRankingQuery(params: GetFeedVenuesParams): Promise<FeedCan
         cv.photo_url,
         cv.photo_ref,
         cv.photo_attribution,
+        ${isOpenNowColumn},
         LEAST(cv.distance_m / ${DISTANCE_NORMALISER_METERS}::float, 1) AS normalised_distance,
         COALESCE(bf.freshness_score, 0) AS freshness_score
       FROM candidate_venues cv
-      JOIN open_now ON open_now.id = cv.id
+      ${openNowJoin}
       LEFT JOIN badge_freshness bf ON bf.venue_id = cv.id
       WHERE ${combineFilterConditions(filters)}
     )
@@ -341,28 +422,85 @@ async function runFeedRankingQuery(params: GetFeedVenuesParams): Promise<FeedCan
       photo_url AS "photoUrl", photo_ref AS "photoRef", photo_attribution AS "photoAttribution",
       ST_Y(location::geometry) AS lat, ST_X(location::geometry) AS lng
     FROM scored
-    ORDER BY ${scoreSqlExpression()} DESC
+    ORDER BY ${scoreSqlExpression(!openNowOnly)} DESC
     LIMIT ${limit}
   `);
 
   return result.rows;
 }
 
+// FeedVenue's one extra field over VenueCardData. Always populated (even
+// when openNowOnly:true, where it's trivially "open") so every feed read
+// path returns one consistent shape rather than a type that varies with a
+// runtime boolean.
+export interface FeedVenue extends VenueCardData {
+  availability: FeedVenueAvailability;
+}
+
+// Batched venue_hours read for tonightAvailability, one query regardless of
+// candidate count. Only ever called with openNowOnly:false's candidate rows
+// — openNowOnly:true skips this entirely (every row is already known-open,
+// see buildAvailabilityMap below), so the default feed path pays no extra
+// query cost for this feature.
+async function fetchHoursByVenueId(venueIds: string[]): Promise<Map<string, VenueHoursInput[]>> {
+  const byVenue = new Map<string, VenueHoursInput[]>();
+  if (venueIds.length === 0) return byVenue;
+
+  const rows = await db
+    .select({
+      venueId: venueHours.venueId,
+      dayOfWeek: venueHours.dayOfWeek,
+      isClosed: venueHours.isClosed,
+      opensAt: venueHours.opensAt,
+      closesAt: venueHours.closesAt,
+    })
+    .from(venueHours)
+    .where(inArray(venueHours.venueId, venueIds));
+
+  for (const row of rows) {
+    const list = byVenue.get(row.venueId) ?? [];
+    list.push({ dayOfWeek: row.dayOfWeek, isClosed: row.isClosed, opensAt: row.opensAt, closesAt: row.closesAt });
+    byVenue.set(row.venueId, list);
+  }
+  return byVenue;
+}
+
+async function buildAvailabilityMap(rows: FeedCandidateRow[], openNowOnly: boolean, now: Date): Promise<Map<string, FeedVenueAvailability>> {
+  const map = new Map<string, FeedVenueAvailability>();
+  if (openNowOnly) {
+    // Every row is guaranteed open by runFeedRankingQuery's INNER JOIN — no
+    // need to know the exact closesAt for this synthetic case, since the
+    // UI never renders availability at all when openNowOnly is true.
+    for (const row of rows) map.set(row.id, { status: "open", closesAt: "", spansMidnight: false });
+    return map;
+  }
+  const hoursByVenue = await fetchHoursByVenueId(rows.map((r) => r.id));
+  for (const row of rows) map.set(row.id, tonightAvailability(hoursByVenue.get(row.id) ?? [], now));
+  return map;
+}
+
 // The public read path for a feed page. Attributes are returned exclusively
 // as AttributeView badges (provenance.ts) — there is no path from this
 // function's return value back to a bare venue_attributes value, and no
 // coordinates leak out either (see runFeedRankingQuery above).
-export async function getFeedVenues(params: GetFeedVenuesParams): Promise<VenueCardData[]> {
+export async function getFeedVenues(params: GetFeedVenuesParams): Promise<FeedVenue[]> {
   const rows = await runFeedRankingQuery(params);
   if (rows.length === 0) return [];
 
-  const attributeRows = await fetchAttributeViewRows(rows.map((v) => v.id));
+  const openNowOnly = params.openNowOnly ?? true;
   const now = params.now ?? new Date();
-  return rows.map((venue) => buildVenueCard(venue, attributeRows, now));
+  const [attributeRows, availability] = await Promise.all([
+    fetchAttributeViewRows(rows.map((v) => v.id)),
+    buildAvailabilityMap(rows, openNowOnly, now),
+  ]);
+  return rows.map((venue) => ({
+    ...buildVenueCard(venue, attributeRows, now),
+    availability: availability.get(venue.id) ?? { status: "unknown" },
+  }));
 }
 
 export interface FeedVenueWithLocation {
-  venue: VenueCardData;
+  venue: FeedVenue;
   lat: number;
   lng: number;
 }
@@ -376,10 +514,14 @@ export async function getFeedVenuesWithLocation(params: GetFeedVenuesParams): Pr
   const rows = await runFeedRankingQuery(params);
   if (rows.length === 0) return [];
 
-  const attributeRows = await fetchAttributeViewRows(rows.map((v) => v.id));
+  const openNowOnly = params.openNowOnly ?? true;
   const now = params.now ?? new Date();
+  const [attributeRows, availability] = await Promise.all([
+    fetchAttributeViewRows(rows.map((v) => v.id)),
+    buildAvailabilityMap(rows, openNowOnly, now),
+  ]);
   return rows.map((row) => ({
-    venue: buildVenueCard(row, attributeRows, now),
+    venue: { ...buildVenueCard(row, attributeRows, now), availability: availability.get(row.id) ?? { status: "unknown" } },
     lat: row.lat,
     lng: row.lng,
   }));
@@ -430,7 +572,7 @@ export async function countVenuesPerFilter(
 // accidentally fold these into the main feed result, only to ask for them
 // explicitly for the labelled "closing soon" section (CLAUDE.md invariant 5
 // and the PRD's 45-minute rule are never relaxed).
-export async function getClosingSoonVenues(params: GetFeedVenuesParams): Promise<VenueCardData[]> {
+export async function getClosingSoonVenues(params: GetFeedVenuesParams): Promise<FeedVenue[]> {
   const { lat, lng, radiusMeters = 2000, limit = 10, now = new Date() } = params;
 
   const result = await db.execute<FeedCandidateRow>(drizzleSql`
@@ -483,6 +625,14 @@ export async function getClosingSoonVenues(params: GetFeedVenuesParams): Promise
 
   if (result.rows.length === 0) return [];
 
-  const attributeRows = await fetchAttributeViewRows(result.rows.map((v) => v.id));
-  return result.rows.map((venue) => buildVenueCard(venue, attributeRows, now));
+  // Real closesAt (not the synthetic "" used elsewhere), since this section
+  // is specifically labelled "closing soon" — worth showing when it closes.
+  const [attributeRows, availability] = await Promise.all([
+    fetchAttributeViewRows(result.rows.map((v) => v.id)),
+    buildAvailabilityMap(result.rows, false, now),
+  ]);
+  return result.rows.map((venue) => ({
+    ...buildVenueCard(venue, attributeRows, now),
+    availability: availability.get(venue.id) ?? { status: "unknown" },
+  }));
 }
