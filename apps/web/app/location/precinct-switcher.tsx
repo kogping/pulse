@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Sheet } from "@pulse/ui";
-import { fetchEnabledPrecincts, type PrecinctOption } from "./api";
+import { fetchPrecincts, type PrecinctOption } from "./api";
 import { PrecinctPicker } from "./precinct-picker";
 import { rememberPrecinct } from "./storage";
 
@@ -24,7 +24,7 @@ export function PrecinctSwitcher({ currentPrecinctName, filtersParam }: Precinct
   function handleOpen() {
     setOpen(true);
     setLoading(true);
-    fetchEnabledPrecincts().then((options) => {
+    fetchPrecincts().then((options) => {
       setPrecincts(options);
       setLoading(false);
     });

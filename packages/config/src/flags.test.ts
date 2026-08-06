@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const { get } = vi.hoisted(() => ({ get: vi.fn() }));
 vi.mock("@vercel/edge-config", () => ({ get }));
 
-const { __resetFlagCacheForTests, getFlag, precinctFlag } = await import("./flags");
+const { __resetFlagCacheForTests, getFlag } = await import("./flags");
 
 beforeEach(() => {
   get.mockReset();
@@ -25,16 +25,6 @@ describe("getFlag", () => {
   it("defaults map_enabled to ON", async () => {
     get.mockResolvedValue(undefined);
     expect(await getFlag("map_enabled")).toBe(true);
-  });
-
-  it("defaults citywide_coverage_enabled to OFF", async () => {
-    get.mockResolvedValue(undefined);
-    expect(await getFlag("citywide_coverage_enabled")).toBe(false);
-  });
-
-  it("defaults dynamic precinct flags to OFF", async () => {
-    get.mockResolvedValue(undefined);
-    expect(await getFlag(precinctFlag("newtown"))).toBe(false);
   });
 
   it("falls back to the default without throwing when Edge Config read fails", async () => {

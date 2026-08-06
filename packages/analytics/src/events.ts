@@ -26,7 +26,6 @@ export type EventPayloads = {
   empty_state_shown: {
     reason: string;
   };
-  out_of_coverage_email_captured: undefined;
   // Console-only: fired client-side per queue item on submit, for local
   // debugging via /debug/events. The durable, cross-curator record of the
   // same measurement lives in verification_events.duration_ms and is what

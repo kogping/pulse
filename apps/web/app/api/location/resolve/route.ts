@@ -1,37 +1,13 @@
 import { PRECINCT_REGISTRY } from "@pulse/db";
-import { getFlag, precinctFlag } from "@pulse/config";
 import { NextResponse, type NextRequest } from "next/server";
 import { haversineDistanceMeters } from "../../feed/geohash";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Legacy (citywide_coverage_enabled off) behaviour only: beyond this
-// distance from every enabled precinct's transit hub, a visitor is out of
-// coverage rather than just "far from the centroid" — matches the scale of
-// a single inner-Sydney precinct (a couple of km across).
-const COVERAGE_RADIUS_METERS = 5_000;
-
 interface ResolvedBody {
   status: "resolved";
   precinct: { id: string; name: string; lat: number; lng: number };
-}
-
-interface OutOfCoverageBody {
-  status: "out_of_coverage";
-}
-
-async function nearestEnabledPrecinct(
-  origin: { lat: number; lng: number },
-): Promise<{ precinct: (typeof PRECINCT_REGISTRY)[number]; distanceMeters: number } | undefined> {
-  const enabledPrecincts = await Promise.all(
-    PRECINCT_REGISTRY.map(async (precinct) => ({
-      precinct,
-      enabled: await getFlag(precinctFlag(precinct.id)),
-    })),
-  ).then((entries) => entries.filter((entry) => entry.enabled).map((entry) => entry.precinct));
-
-  return nearestOf(enabledPrecincts, origin);
 }
 
 function nearestOf(
@@ -54,14 +30,12 @@ function nearestOf(
 // never written anywhere or echoed back — CLAUDE.md invariant 6, "the
 // request carries them, the response is computed, they are dropped".
 //
-// citywide_coverage_enabled off (default/legacy): only the original
-// 2-precinct geofence — nearest *enabled* precinct within
-// COVERAGE_RADIUS_METERS, else out_of_coverage. On: every visitor resolves
-// to the nearest PRECINCT_REGISTRY entry regardless of distance or that
-// entry's own precinct_<id>_enabled flag — the label is cosmetic now, not
-// an access gate, because the feed itself is no longer scoped to a
-// precinct (see packages/db/src/feed.ts). out_of_coverage can no longer be
-// returned once the flag is on.
+// Coverage is city-wide (see "feat: city-wide Sydney coverage"): every
+// visitor resolves to the nearest PRECINCT_REGISTRY entry regardless of
+// distance — the label is cosmetic, not an access gate, because the feed
+// itself is no longer scoped to a precinct (see packages/db/src/feed.ts).
+// There is no out-of-coverage outcome as long as PRECINCT_REGISTRY is
+// non-empty, which it always is.
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
   const lat = params.get("lat");
@@ -72,22 +46,12 @@ export async function GET(request: NextRequest) {
   }
 
   const origin = { lat: Number(lat), lng: Number(lng) };
-  const citywideEnabled = await getFlag("citywide_coverage_enabled");
+  const nearest = nearestOf(PRECINCT_REGISTRY, origin);
 
-  if (citywideEnabled) {
-    const nearest = nearestOf(PRECINCT_REGISTRY, origin);
-    // Only reachable if PRECINCT_REGISTRY is ever empty, which it never is.
-    if (!nearest) return NextResponse.json({ status: "out_of_coverage" } satisfies OutOfCoverageBody);
-    return NextResponse.json({ status: "resolved", precinct: nearest.precinct } satisfies ResolvedBody);
+  // Only reachable if PRECINCT_REGISTRY is ever empty, which it never is.
+  if (!nearest) {
+    return NextResponse.json({ error: "no precinct registered" }, { status: 500 });
   }
 
-  const nearest = await nearestEnabledPrecinct(origin);
-  if (!nearest || nearest.distanceMeters > COVERAGE_RADIUS_METERS) {
-    return NextResponse.json({ status: "out_of_coverage" } satisfies OutOfCoverageBody);
-  }
-
-  return NextResponse.json({
-    status: "resolved",
-    precinct: nearest.precinct,
-  } satisfies ResolvedBody);
+  return NextResponse.json({ status: "resolved", precinct: nearest.precinct } satisfies ResolvedBody);
 }

@@ -18,8 +18,8 @@ export interface IntentFilterDef {
    *  open_now never relaxes — the 45-minute rule is not negotiable. */
   droppable: boolean;
   /** Edge Config flag name gating this filter's visibility, if any. Kept as
-   *  a string literal rather than importing @pulse/config's StaticFlagName
-   *  to avoid a cross-package dependency for a single type. */
+   *  a string literal rather than importing @pulse/config's FlagName to
+   *  avoid a cross-package dependency for a single type. */
   flagName?: "accessibility_filter_enabled";
 }
 

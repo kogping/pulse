@@ -96,34 +96,6 @@ test.describe("F1.1 location resolution", () => {
     await expect(page.getByTestId("precinct-picker")).toHaveCount(0);
   });
 
-  test("location outside every enabled precinct shows the out-of-coverage screen and captures an email", async ({
-    page,
-  }) => {
-    const requests: { url: string; postData: string | null }[] = [];
-    page.on("request", (request) => requests.push({ url: request.url(), postData: request.postData() }));
-
-    await page.route("**/api/location/resolve*", (route: Route) => route.fulfill({ json: { status: "out_of_coverage" } }));
-    await page.route("**/api/out-of-coverage", (route: Route) => route.fulfill({ status: 201, json: { ok: true } }));
-
-    await stubGeolocationSuccess(page, VISITOR_LAT, VISITOR_LNG);
-    await page.goto("/");
-
-    await expect(page.getByTestId("out-of-coverage-screen")).toBeVisible();
-    await page.getByLabel("Suburb").fill("Wollongong");
-    await page.getByLabel("Email").fill("visitor@example.com");
-    await page.getByRole("button", { name: "Notify me" }).click();
-
-    await expect(page.getByTestId("out-of-coverage-done")).toBeVisible();
-    await expect(page.getByTestId("out-of-coverage-done")).toContainText("Wollongong");
-
-    const captureRequest = requests.find((request) => request.url.includes("/api/out-of-coverage"));
-    expect(captureRequest?.postData).toBeTruthy();
-    const body = JSON.parse(captureRequest!.postData!);
-    expect(body).toEqual({ email: "visitor@example.com", suburb: "Wollongong" });
-
-    assertCoordinatesOnlyLeakToResolve(requests);
-  });
-
   test("geolocation slower than 3s renders the precinct picker instead of a spinner", async ({ page }) => {
     await stubGeolocationHangs(page);
     await page.route("**/api/precincts", (route: Route) => route.fulfill({ json: { precincts: [NEWTOWN] } }));
@@ -139,8 +111,8 @@ test.describe("F1.1 location resolution", () => {
 // request carries them, the response is computed, they are dropped") and
 // the spec's "never sent to any analytics call and never written to the
 // DB". Every other request captured during the test — including the page
-// navigation itself, /api/precincts, and /api/out-of-coverage — must not
-// carry the coordinate pair the geolocation stub returned.
+// navigation itself and /api/precincts — must not carry the coordinate
+// pair the geolocation stub returned.
 function assertCoordinatesOnlyLeakToResolve(requests: { url: string; postData: string | null }[]) {
   const coordMarker = `${VISITOR_LAT}`;
   const leaks = requests.filter((request) => {
