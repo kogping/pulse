@@ -41,8 +41,9 @@ export {
   buildAttributeView,
   buildVenueCard,
   getVenueForCard,
+  getVenuePhotoRef,
 } from "./provenance";
-export type { AttributeValue, AttributeView, AttributeViewRow, VenueCardData } from "./provenance";
+export type { AttributeValue, AttributeView, AttributeViewRow, VenueCardData, VenuePhoto } from "./provenance";
 export { formatClockTime, getVenueDetail } from "./venue-detail";
 export type { TonightHours, VenueDetailData } from "./venue-detail";
 export {

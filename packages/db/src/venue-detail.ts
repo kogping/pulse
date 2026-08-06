@@ -2,7 +2,7 @@ import { and, eq, sql as drizzleSql } from "drizzle-orm";
 import { db } from "./client";
 import { venueHours, venues } from "./schema";
 import type { VenueSource } from "./schema";
-import { buildVenueCard, fetchAttributeViewRows, type AttributeView } from "./provenance";
+import { buildVenueCard, fetchAttributeViewRows, type AttributeView, type VenuePhoto } from "./provenance";
 
 const SYDNEY_TZ = "Australia/Sydney";
 const WEEKDAY_INDEX: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
@@ -47,6 +47,7 @@ export interface VenueDetailData {
   lat: number;
   lng: number;
   attributes: AttributeView[];
+  photo: VenuePhoto;
   tonight: TonightHours;
 }
 
@@ -62,6 +63,9 @@ export async function getVenueDetail(venueId: string, now: Date = new Date()): P
       precinct: venues.precinct,
       source: venues.source,
       curatorPitch: venues.curatorPitch,
+      photoUrl: venues.photoUrl,
+      photoRef: venues.photoRef,
+      photoAttribution: venues.photoAttribution,
       lat: drizzleSql<number>`ST_Y(${venues.location}::geometry)`,
       lng: drizzleSql<number>`ST_X(${venues.location}::geometry)`,
     })
@@ -87,7 +91,7 @@ export async function getVenueDetail(venueId: string, now: Date = new Date()): P
       : { isOpenTonight: false };
 
   const attributeRows = await fetchAttributeViewRows([venueId]);
-  const { attributes } = buildVenueCard({ ...venue, source: venue.source as VenueSource }, attributeRows, now);
+  const { attributes, photo } = buildVenueCard({ ...venue, source: venue.source as VenueSource }, attributeRows, now);
 
   return {
     id: venue.id,
@@ -98,6 +102,7 @@ export async function getVenueDetail(venueId: string, now: Date = new Date()): P
     lat: venue.lat,
     lng: venue.lng,
     attributes,
+    photo,
     tonight,
   };
 }

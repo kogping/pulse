@@ -44,7 +44,26 @@ import {
 import { flushSentry, initSentry } from "./lib/sentry";
 
 const PLACES_ENDPOINT = "https://places.googleapis.com/v1/places:searchNearby";
-const INCLUDED_TYPES = ["bar", "night_club", "pub", "wine_bar"];
+// Google Places API (New) Table A types. No "darts" type exists — darts
+// venues already surface under bar/pub/amusement_center by their primary
+// type. Broad types like "restaurant" self-limit in practice: a venue only
+// enters the feed if it has venue_hours covering "tonight" (see
+// upsertCandidates's skippedNoHours), so a lunch-only restaurant just never
+// shows up even though it gets imported.
+const INCLUDED_TYPES = [
+  "bar",
+  "night_club",
+  "pub",
+  "wine_bar",
+  "restaurant",
+  "movie_theater",
+  "karaoke",
+  "bowling_alley",
+  "amusement_center",
+  "video_arcade",
+  "comedy_club",
+  "casino",
+];
 const FIELD_MASK = [
   "places.id",
   "places.displayName",
@@ -53,6 +72,7 @@ const FIELD_MASK = [
   "places.addressComponents",
   "places.regularOpeningHours",
   "places.businessStatus",
+  "places.photos",
 ].join(",");
 
 async function searchNearby(cell: Cell, apiKey: string): Promise<PlaceResult[]> {
@@ -149,7 +169,15 @@ async function upsertCandidates(candidates: CandidateVenue[], dryRun: boolean): 
     if (existing) {
       await db
         .update(venues)
-        .set({ name: candidate.name, precinct: candidate.precinct, location: point, externalSyncedAt: new Date(), updatedAt: new Date() })
+        .set({
+          name: candidate.name,
+          precinct: candidate.precinct,
+          location: point,
+          photoRef: candidate.photoRef,
+          photoAttribution: candidate.photoAttribution,
+          externalSyncedAt: new Date(),
+          updatedAt: new Date(),
+        })
         .where(eq(venues.id, venueId));
       summary.updated++;
     } else {
@@ -162,6 +190,8 @@ async function upsertCandidates(candidates: CandidateVenue[], dryRun: boolean): 
         externalPlaceId: candidate.externalPlaceId,
         externalSyncedAt: new Date(),
         location: point,
+        photoRef: candidate.photoRef,
+        photoAttribution: candidate.photoAttribution,
       });
       summary.inserted++;
     }

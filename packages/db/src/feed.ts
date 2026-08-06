@@ -223,6 +223,9 @@ function candidateAndOpenNowCte(params: { lat: number; lng: number; radiusMeters
         v.quality_tier,
         v.source,
         v.location,
+        v.photo_url,
+        v.photo_ref,
+        v.photo_attribution,
         ST_Distance(v.location, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography) AS distance_m
       FROM venues v
       WHERE ST_DWithin(v.location, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography, ${radiusMeters})
@@ -283,6 +286,9 @@ interface FeedCandidateRow extends Record<string, unknown> {
   source: VenueSource;
   lat: number;
   lng: number;
+  photoUrl: string | null;
+  photoRef: string | null;
+  photoAttribution: string | null;
 }
 
 // Shared query body for the feed ranking pipeline (F1.1-F1.4): venues within
@@ -320,6 +326,9 @@ async function runFeedRankingQuery(params: GetFeedVenuesParams): Promise<FeedCan
         cv.quality_tier,
         cv.source,
         cv.location,
+        cv.photo_url,
+        cv.photo_ref,
+        cv.photo_attribution,
         LEAST(cv.distance_m / ${DISTANCE_NORMALISER_METERS}::float, 1) AS normalised_distance,
         COALESCE(bf.freshness_score, 0) AS freshness_score
       FROM candidate_venues cv
@@ -327,7 +336,10 @@ async function runFeedRankingQuery(params: GetFeedVenuesParams): Promise<FeedCan
       LEFT JOIN badge_freshness bf ON bf.venue_id = cv.id
       WHERE ${combineFilterConditions(filters)}
     )
-    SELECT id, name, precinct, source, ST_Y(location::geometry) AS lat, ST_X(location::geometry) AS lng
+    SELECT
+      id, name, precinct, source,
+      photo_url AS "photoUrl", photo_ref AS "photoRef", photo_attribution AS "photoAttribution",
+      ST_Y(location::geometry) AS lat, ST_X(location::geometry) AS lng
     FROM scored
     ORDER BY ${scoreSqlExpression()} DESC
     LIMIT ${limit}
@@ -429,6 +441,9 @@ export async function getClosingSoonVenues(params: GetFeedVenuesParams): Promise
         v.precinct,
         v.source,
         v.location,
+        v.photo_url,
+        v.photo_ref,
+        v.photo_attribution,
         ST_Distance(v.location, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography) AS distance_m
       FROM venues v
       WHERE ST_DWithin(v.location, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography, ${radiusMeters})
@@ -456,7 +471,10 @@ export async function getClosingSoonVenues(params: GetFeedVenuesParams): Promise
       EXCEPT
       SELECT id FROM open_with_buffer
     )
-    SELECT cv.id, cv.name, cv.precinct, cv.source, ST_Y(cv.location::geometry) AS lat, ST_X(cv.location::geometry) AS lng
+    SELECT
+      cv.id, cv.name, cv.precinct, cv.source,
+      cv.photo_url AS "photoUrl", cv.photo_ref AS "photoRef", cv.photo_attribution AS "photoAttribution",
+      ST_Y(cv.location::geometry) AS lat, ST_X(cv.location::geometry) AS lng
     FROM candidate_venues cv
     JOIN closing_soon cs ON cs.id = cv.id
     ORDER BY cv.distance_m ASC

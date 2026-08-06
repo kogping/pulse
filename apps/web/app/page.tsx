@@ -28,6 +28,13 @@ function venueCardProps(venue: VenueCardData) {
       attribute,
     }));
 
+  const photo =
+    venue.photo.kind === "curator"
+      ? { src: venue.photo.url, attribution: null }
+      : venue.photo.kind === "places"
+        ? { src: `/api/venue-photo/${venue.id}`, attribution: venue.photo.attribution }
+        : undefined;
+
   return {
     name: venue.name,
     precinct: venue.precinct,
@@ -37,6 +44,7 @@ function venueCardProps(venue: VenueCardData) {
       lastEntry && lastEntry.confidence !== "unconfirmed"
         ? { mode: "scheduled" as const, label: `Last entry ${lastEntry.value}` }
         : undefined,
+    photo,
   };
 }
 

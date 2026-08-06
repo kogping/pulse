@@ -21,6 +21,19 @@ export default async function VenuePage({ params, searchParams }: VenuePageProps
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-[430px] flex-col gap-4 px-4 pb-safe-b pt-safe-t">
+      {venue.photo.kind !== "none" ? (
+        <div className="relative -mx-4 mt-safe-t overflow-hidden">
+          <img
+            src={venue.photo.kind === "curator" ? venue.photo.url : `/api/venue-photo/${venue.id}`}
+            alt={venue.name}
+            className="h-56 w-full object-cover"
+          />
+          {venue.photo.kind === "places" && venue.photo.attribution ? (
+            <p className="absolute bottom-1 right-2 text-[10px] text-ink-50/80">Photo: {venue.photo.attribution}</p>
+          ) : null}
+        </div>
+      ) : null}
+
       <div className="pt-4">
         <h1 className="text-2xl font-semibold text-ink-50">{venue.name}</h1>
         <p className="text-sm text-ink-300">{venue.precinct}</p>
