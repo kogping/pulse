@@ -1,6 +1,7 @@
 import NextAuth, { type NextAuthResult } from "next-auth";
 import Nodemailer from "next-auth/providers/nodemailer";
 import type { Adapter, AdapterUser } from "next-auth/adapters";
+import { NextResponse } from "next/server";
 import { curatorStore, type CuratorRecord } from "./curator-store";
 import { sessionStore } from "./session-store";
 import { sendMagicLinkEmail } from "./email";
@@ -148,3 +149,16 @@ export const handlers: NextAuthResult["handlers"] = nextAuth.handlers;
 export const auth: NextAuthResult["auth"] = nextAuth.auth;
 export const signIn: NextAuthResult["signIn"] = nextAuth.signIn;
 export const signOut: NextAuthResult["signOut"] = nextAuth.signOut;
+
+// Shared route-handler guard: any signed-in curator may call any console API
+// (see pending-edits/route.ts's comment — approve/reject is gated on the
+// author check inside decidePendingEdit, not on who can see the endpoint).
+// Returns the 401 response directly so a route handler's guard is always
+// `const session = await requireCuratorSession(); if (session instanceof
+// NextResponse) return session;` rather than each route re-deriving the
+// unauthorized-response shape by hand.
+export async function requireCuratorSession(): Promise<{ curatorId: string } | NextResponse> {
+  const session = await auth();
+  if (!session?.curatorId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  return { curatorId: session.curatorId };
+}

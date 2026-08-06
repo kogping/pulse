@@ -86,6 +86,11 @@ export function geohashDecode(geohash: string): { lat: number; lng: number } {
 
 const EARTH_RADIUS_METERS = 6_371_000;
 
+// Same formula as packages/db/src/geo.ts's haversineMeters, deliberately not
+// imported from there: this file is pulled into the client bundle by
+// location-gate.tsx (via geohashDecode), and @pulse/db's barrel export drags
+// in the DB client module — exactly what the "stop lazy DB client crashing
+// client bundles" fix removed from the client path.
 export function haversineDistanceMeters(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
   const toRad = (degrees: number) => (degrees * Math.PI) / 180;
   const dLat = toRad(b.lat - a.lat);

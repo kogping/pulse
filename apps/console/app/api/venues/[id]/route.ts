@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireCuratorSession } from "@/lib/auth";
 import { updateVenue } from "@/lib/venues";
 import { venueStore } from "@/lib/venue-store";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const session = await auth();
-  if (!session?.curatorId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const session = await requireCuratorSession();
+  if (session instanceof NextResponse) return session;
 
   const { id } = await params;
   const venue = await venueStore.getWithDetails(id);
@@ -14,8 +14,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 }
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const session = await auth();
-  if (!session?.curatorId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const session = await requireCuratorSession();
+  if (session instanceof NextResponse) return session;
 
   const { id } = await params;
   const body = await request.json();

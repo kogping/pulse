@@ -130,7 +130,12 @@ export interface VenueCardData {
   photo: VenuePhoto;
 }
 
-// Pure grouping/mapping step, no I/O.
+// Pure grouping/mapping step, no I/O. Scopes attributeRows to this venue
+// itself (safe even if a caller passes a multi-venue array), but callers
+// building many cards from one shared multi-venue fetch (feed.ts) should
+// still pre-group by venueId themselves first — passing this function only
+// each venue's own slice keeps the filter below O(that venue's rows)
+// instead of O(every candidate's rows).
 export function buildVenueCard(
   venue: {
     id: string;

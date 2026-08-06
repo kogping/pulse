@@ -1,5 +1,6 @@
 import { bumpPrecinctFeedCacheVersion, insertCorrectionFlag, redis } from "@pulse/db";
 import { NextResponse, type NextRequest } from "next/server";
+import * as Sentry from "@sentry/nextjs";
 import { readSessionHash } from "../../../lib/session";
 import { isOverFlagRateLimit } from "./rate-limit";
 
@@ -46,6 +47,7 @@ export async function POST(request: NextRequest) {
     await bumpPrecinctFeedCacheVersion(redis, result.precinct);
   } catch (error) {
     console.warn(`[flag] failed to invalidate feed cache for precinct "${result.precinct}"`, error);
+    Sentry.captureException(error);
   }
 
   return NextResponse.json({ ok: true }, { status: 200 });

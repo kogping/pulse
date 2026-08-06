@@ -83,19 +83,37 @@ function createDrizzleQueueStore(): QueueStore {
     },
 
     async applyActions(curatorId, actions) {
-      const { db, venueAttributes, verificationEvents, pendingEdits, hasDeclaredInterest } = await import("@pulse/db");
-      const { eq, sql } = await import("drizzle-orm");
+      const { db, venueAttributes, verificationEvents, pendingEdits, curatorVenueInterests } = await import("@pulse/db");
+      const { eq, inArray, sql } = await import("drizzle-orm");
 
       const sorted = [...actions].sort((a, b) => a.seq - b.seq);
       const results: OutboxActionResult[] = [];
 
+      // Bulk-fetch what per-action logic below needs, rather than a
+      // (select attribute + select hasDeclaredInterest) round trip pair per
+      // action — for a full 20-action offline outbox flush this cuts ~40
+      // sequential DB round trips down to 2, before the per-action
+      // insert/update writes (which do need to run in order; see the catch
+      // block below).
+      const attributeIds = [...new Set(sorted.map((a) => a.venueAttributeId))];
+      const attributeRows =
+        attributeIds.length === 0
+          ? []
+          : await db
+              .select({ id: venueAttributes.id, venueId: venueAttributes.venueId })
+              .from(venueAttributes)
+              .where(inArray(venueAttributes.id, attributeIds));
+      const attributeById = new Map(attributeRows.map((row) => [row.id, row]));
+
+      const interestRows = await db
+        .select({ venueId: curatorVenueInterests.venueId })
+        .from(curatorVenueInterests)
+        .where(eq(curatorVenueInterests.curatorId, curatorId));
+      const interestedVenueIds = new Set(interestRows.map((row) => row.venueId));
+
       for (const action of sorted) {
         try {
-          const [attribute] = await db
-            .select({ id: venueAttributes.id, venueId: venueAttributes.venueId })
-            .from(venueAttributes)
-            .where(eq(venueAttributes.id, action.venueAttributeId))
-            .limit(1);
+          const attribute = attributeById.get(action.venueAttributeId);
           if (!attribute) {
             results.push({ id: action.id, status: "rejected", reason: "unknown venue attribute" });
             continue;
@@ -108,7 +126,7 @@ function createDrizzleQueueStore(): QueueStore {
           // batch already excludes conflicted venues entirely (queue.ts),
           // so this is the backstop for a stale client-side outbox action
           // queued before the interest was declared.
-          if (action.kind === "correct" && (await hasDeclaredInterest(curatorId, attribute.venueId))) {
+          if (action.kind === "correct" && interestedVenueIds.has(attribute.venueId)) {
             const inserted = await db
               .insert(pendingEdits)
               .values({
@@ -168,12 +186,15 @@ function createDrizzleQueueStore(): QueueStore {
           }
 
           results.push({ id: action.id, status: "applied" });
-        } catch {
-          // Transient failure (e.g. a dropped connection mid-batch). Stop
-          // here rather than continuing past the gap — actions after this
-          // one in `sorted` depend on FIFO ordering being preserved, and
-          // applying them out of order would violate that guarantee. The
-          // client keeps unresolved actions in its outbox and retries.
+        } catch (error) {
+          // Logged so a non-transient failure (bad payload, schema drift)
+          // is diagnosable server-side instead of surfacing to the curator
+          // only as an indefinitely-retried "transient" outbox entry.
+          console.error(`[queue-store] applyActions failed on action ${action.id} (${action.kind})`, error);
+          // Stop here rather than continuing past the gap — actions after
+          // this one in `sorted` depend on FIFO ordering being preserved,
+          // and applying them out of order would violate that guarantee.
+          // The client keeps unresolved actions in its outbox and retries.
           results.push({ id: action.id, status: "rejected", reason: "transient" });
           break;
         }

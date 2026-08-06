@@ -59,6 +59,40 @@ export interface VenueStore {
   listAll(): Promise<VenueDetailRecord[]>;
 }
 
+// Shared row -> record mappers, used by both getWithDetails (single venue)
+// and listAll (every venue) so the two read paths can't drift on shape.
+function toHoursRecord(row: {
+  id: string;
+  dayOfWeek: number;
+  isClosed: boolean;
+  opensAt: string | null;
+  closesAt: string | null;
+  kitchenClosesAt: string | null;
+}): VenueHoursRecord {
+  return {
+    id: row.id,
+    dayOfWeek: row.dayOfWeek,
+    isClosed: row.isClosed,
+    opensAt: row.opensAt,
+    closesAt: row.closesAt,
+    kitchenClosesAt: row.kitchenClosesAt,
+  };
+}
+
+function toAttributeRecord(
+  row: { id: string; attributeKey: string; value: string; lastVerifiedAt: Date; verifiedBy: string | null },
+  verificationEventCount: number,
+): VenueAttributeRecord {
+  return {
+    id: row.id,
+    key: row.attributeKey,
+    value: row.value,
+    lastVerifiedAt: row.lastVerifiedAt,
+    verifiedBy: row.verifiedBy,
+    verificationEventCount,
+  };
+}
+
 // Bumps the Redis feed-cache version for `precinct` after a venue_hours or
 // venue_attributes write commits (see packages/db/src/feed-cache.ts and
 // CLAUDE.md's Redis feed cache spec). Best-effort — a Redis outage here must
@@ -268,7 +302,7 @@ function createDrizzleVenueStore(): VenueStore {
 
     async getWithDetails(venueId) {
       const { db, venues, venueHours, venueAttributes, verificationEvents } = await import("@pulse/db");
-      const { eq, sql } = await import("drizzle-orm");
+      const { eq, inArray, sql } = await import("drizzle-orm");
 
       const [venue] = await db
         .select({
@@ -291,22 +325,22 @@ function createDrizzleVenueStore(): VenueStore {
 
       const hourRows = await db.select().from(venueHours).where(eq(venueHours.venueId, venueId));
       const attributeRows = await db.select().from(venueAttributes).where(eq(venueAttributes.venueId, venueId));
-      const attributes: VenueAttributeRecord[] = [];
-      for (const row of attributeRows) {
-        const [countRow] = await db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(verificationEvents)
-          .where(eq(verificationEvents.venueAttributeId, row.id));
-        const count = countRow?.count ?? 0;
-        attributes.push({
-          id: row.id,
-          key: row.attributeKey,
-          value: row.value,
-          lastVerifiedAt: row.lastVerifiedAt,
-          verifiedBy: row.verifiedBy,
-          verificationEventCount: count,
-        });
-      }
+      // One grouped count query for every attribute on this venue, rather
+      // than a verification_events round trip per attribute.
+      const verificationCounts =
+        attributeRows.length === 0
+          ? []
+          : await db
+              .select({ venueAttributeId: verificationEvents.venueAttributeId, count: sql<number>`count(*)::int` })
+              .from(verificationEvents)
+              .where(
+                inArray(
+                  verificationEvents.venueAttributeId,
+                  attributeRows.map((row) => row.id),
+                ),
+              )
+              .groupBy(verificationEvents.venueAttributeId);
+      const countByAttributeId = new Map(verificationCounts.map((c) => [c.venueAttributeId, c.count]));
 
       return {
         id: venue.id,
@@ -319,23 +353,79 @@ function createDrizzleVenueStore(): VenueStore {
         curatorPitch: venue.curatorPitch ?? "",
         photoUrl: venue.photoUrl,
         source: venue.source as VenueSource,
-        hours: hourRows.map((h) => ({
-          id: h.id,
-          dayOfWeek: h.dayOfWeek,
-          isClosed: h.isClosed,
-          opensAt: h.opensAt,
-          closesAt: h.closesAt,
-          kitchenClosesAt: h.kitchenClosesAt,
-        })),
-        attributes,
+        hours: hourRows.map(toHoursRecord),
+        attributes: attributeRows.map((row) => toAttributeRecord(row, countByAttributeId.get(row.id) ?? 0)),
       };
     },
 
     async listAll() {
-      const { db, venues } = await import("@pulse/db");
-      const rows = await db.select({ id: venues.id }).from(venues);
-      const details = await Promise.all(rows.map((r) => this.getWithDetails(r.id)));
-      return details.filter((d): d is VenueDetailRecord => d !== null);
+      const { db, venues, venueHours, venueAttributes, verificationEvents } = await import("@pulse/db");
+      const { inArray, sql } = await import("drizzle-orm");
+
+      const venueRows = await db
+        .select({
+          id: venues.id,
+          name: venues.name,
+          precinct: venues.precinct,
+          slug: venues.slug,
+          address: venues.address,
+          qualityTier: venues.qualityTier,
+          curatorPitch: venues.curatorPitch,
+          photoUrl: venues.photoUrl,
+          source: venues.source,
+          lat: sql<number>`ST_Y(${venues.location}::geometry)`,
+          lng: sql<number>`ST_X(${venues.location}::geometry)`,
+        })
+        .from(venues);
+      if (venueRows.length === 0) return [];
+
+      // Whole-table hours/attributes/verification-count reads, batched once
+      // regardless of venue count — the previous version called
+      // getWithDetails per venue, which itself issued a query per attribute,
+      // for a total of O(venues x attributes) round trips.
+      const venueIds = venueRows.map((v) => v.id);
+      const [hourRows, attributeRows] = await Promise.all([
+        db.select().from(venueHours).where(inArray(venueHours.venueId, venueIds)),
+        db.select().from(venueAttributes).where(inArray(venueAttributes.venueId, venueIds)),
+      ]);
+      const attributeIds = attributeRows.map((row) => row.id);
+      const verificationCounts =
+        attributeIds.length === 0
+          ? []
+          : await db
+              .select({ venueAttributeId: verificationEvents.venueAttributeId, count: sql<number>`count(*)::int` })
+              .from(verificationEvents)
+              .where(inArray(verificationEvents.venueAttributeId, attributeIds))
+              .groupBy(verificationEvents.venueAttributeId);
+      const countByAttributeId = new Map(verificationCounts.map((c) => [c.venueAttributeId, c.count]));
+
+      const hoursByVenue = new Map<string, VenueHoursRecord[]>();
+      for (const row of hourRows) {
+        const list = hoursByVenue.get(row.venueId) ?? [];
+        list.push(toHoursRecord(row));
+        hoursByVenue.set(row.venueId, list);
+      }
+      const attributesByVenue = new Map<string, VenueAttributeRecord[]>();
+      for (const row of attributeRows) {
+        const list = attributesByVenue.get(row.venueId) ?? [];
+        list.push(toAttributeRecord(row, countByAttributeId.get(row.id) ?? 0));
+        attributesByVenue.set(row.venueId, list);
+      }
+
+      return venueRows.map((venue) => ({
+        id: venue.id,
+        name: venue.name,
+        precinct: venue.precinct,
+        slug: venue.slug,
+        address: venue.address,
+        location: { lat: venue.lat, lng: venue.lng },
+        qualityTier: venue.qualityTier ?? "",
+        curatorPitch: venue.curatorPitch ?? "",
+        photoUrl: venue.photoUrl,
+        source: venue.source as VenueSource,
+        hours: hoursByVenue.get(venue.id) ?? [],
+        attributes: attributesByVenue.get(venue.id) ?? [],
+      }));
     },
   };
 }
