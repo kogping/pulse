@@ -214,7 +214,7 @@ export default async function Home({ searchParams }: HomeProps) {
     now,
     filters: activeFilters,
     openNowOnly,
-    precinctFilter: precinctOnly ? precinct : undefined,
+    precinctOnly,
   });
 
   return (

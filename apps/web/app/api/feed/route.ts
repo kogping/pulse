@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
       now,
       filters,
       openNowOnly,
-      precinctFilter: precinctOnly ? precinct : undefined,
+      precinctOnly,
     },
     {
       logger: {
