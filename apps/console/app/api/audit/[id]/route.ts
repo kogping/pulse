@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireCuratorSession } from "@/lib/auth";
 import { submitAuditVerdict } from "@/lib/audit";
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const session = await auth();
-  if (!session?.curatorId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const session = await requireCuratorSession();
+  if (session instanceof NextResponse) return session;
 
   const { id } = await params;
   const body = (await request.json().catch(() => null)) as { verdict?: "correct" | "incorrect" } | null;

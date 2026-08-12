@@ -3,6 +3,7 @@ export const PACKAGE_NAME = "@pulse/db";
 export { getDatabaseEnv, getEnv, getGooglePlacesEnv, getMapboxEnv, getUpstashEnv } from "./env";
 export type { DatabaseEnv, Env, GooglePlacesEnv, MapboxEnv, UpstashEnv } from "./env";
 export { db, sql } from "./client";
+export { haversineMeters } from "./geo";
 export { redis } from "./redis";
 export * from "./schema";
 export {

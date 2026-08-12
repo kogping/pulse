@@ -169,12 +169,15 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
       v.precinct as precinct,
       va.attribute_key as attribute_key,
       va.last_verified_at as last_verified_at,
-      (
-        select count(*)::int from correction_flags cf
-        where cf.venue_attribute_id = va.id and cf.flagged_at >= now() - interval '24 hours'
-      ) as flag_count
+      coalesce(recent_flags.flag_count, 0) as flag_count
     from venue_attributes va
     join venues v on v.id = va.venue_id
+    left join (
+      select venue_attribute_id, count(*)::int as flag_count
+      from correction_flags
+      where flagged_at >= now() - interval '24 hours'
+      group by venue_attribute_id
+    ) recent_flags on recent_flags.venue_attribute_id = va.id
   `);
   const stateRows = (
     stateResult.rows as unknown as {

@@ -150,6 +150,10 @@ export interface PrecinctCentroid {
 export const HUB_RADIUS_METERS = 800;
 const EARTH_RADIUS_METERS = 6_371_000;
 
+// Same formula as packages/db/src/geo.ts's haversineMeters, deliberately not
+// imported from there: this file's header comment promises pure,
+// dependency-free parsing logic testable without a DB/network, and pulling
+// in @pulse/db here would break that isolation for the sake of one function.
 export function haversineMeters(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
   const toRad = (deg: number) => (deg * Math.PI) / 180;
   const dLat = toRad(b.lat - a.lat);

@@ -73,7 +73,7 @@ function venueCardProps(venue: FeedVenue, openNowOnly: boolean) {
 // all, not merely a disabled button.
 function renderVenueList(relaxation: LoadFeedResult, mapEnabled: boolean, openNowOnly: boolean) {
   const list = (
-    <div className="flex flex-col gap-4">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {relaxation.venues.map((venue, index) => (
         <Link key={venue.id} href={`/venue/${venue.id}?position=${index}&source=feed`}>
           <VenueCard {...venueCardProps(venue, openNowOnly)} />
@@ -183,7 +183,7 @@ export default async function Home({ searchParams }: HomeProps) {
   });
 
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-[430px] flex-col gap-4 px-4 pb-safe-b pt-safe-t">
+    <main className="mx-auto flex min-h-dvh w-full max-w-[430px] flex-col gap-4 px-4 pb-safe-b pt-safe-t sm:max-w-3xl lg:max-w-5xl">
       <div className="flex items-center justify-between pt-4">
         <h1 className="text-2xl font-semibold text-ink-50">Pulse — what's good tonight</h1>
         <PrecinctSwitcher currentPrecinctName={precinct} filtersParam={filtersParam} />
@@ -225,7 +225,7 @@ export default async function Home({ searchParams }: HomeProps) {
         // explicitly labelled as such.
         <section className="flex flex-col gap-3">
           <h2 className="text-sm font-semibold text-ink-100">Closing soon</h2>
-          <div className="flex flex-col gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {relaxation.closingSoon.map((venue, index) => (
               <Link key={venue.id} href={`/venue/${venue.id}?position=${index}&source=closing_soon`}>
                 <VenueCard {...venueCardProps(venue, true)} />

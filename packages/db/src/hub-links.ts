@@ -3,6 +3,7 @@ import { db } from "./client";
 import { venueHubLinks } from "./schema/venue-hub-links";
 import { transitHubs } from "./schema/transit-hubs";
 import { mapboxWalkingClient, type LatLng, type WalkingDirectionsClient } from "./mapbox";
+import { haversineMeters } from "./geo";
 
 export const HUB_SEARCH_RADIUS_METERS = 1500;
 export const MAX_HUBS_PER_VENUE = 5;
@@ -27,16 +28,6 @@ export interface HubLinkResult {
   walkSeconds: number;
   isPrimary: boolean;
   isEstimated: boolean;
-}
-
-function haversineMeters(a: LatLng, b: LatLng): number {
-  const EARTH_RADIUS_M = 6371000;
-  const toRad = (deg: number) => (deg * Math.PI) / 180;
-  const dLat = toRad(b.lat - a.lat);
-  const dLng = toRad(b.lng - a.lng);
-  const h =
-    Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
-  return 2 * EARTH_RADIUS_M * Math.asin(Math.sqrt(h));
 }
 
 interface NearestHubRow extends Record<string, unknown> {

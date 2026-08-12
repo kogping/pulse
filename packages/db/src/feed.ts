@@ -259,14 +259,14 @@ function combineFilterConditions(filters: readonly IntentFilterId[]) {
   return drizzleSql.join(conditions, drizzleSql` AND `);
 }
 
-// Shared candidate-venues + open-now CTE text, used by both the ranking
-// query and countVenuesPerFilter so the two never drift on what "the
-// candidate pool" means (radius + F1.1-F1.4 open-now exclusion). No longer
-// filtered by precinct — venues city-wide within radiusMeters are all
-// candidates, ranked by distance (see FEED_SCORING_WEIGHTS) rather than
-// gated to a single hardcoded precinct.
-function candidateAndOpenNowCte(params: { lat: number; lng: number; radiusMeters: number; now: Date }) {
-  const { lat, lng, radiusMeters, now } = params;
+// Candidate-venues CTE body, shared by every query in this file that needs
+// "venues within radiusMeters of (lat, lng)" — the ranking query,
+// countVenuesPerFilter, and getClosingSoonVenues — so they never drift on
+// what the candidate pool means. No longer filtered by precinct — venues
+// city-wide within radiusMeters are all candidates, ranked by distance (see
+// FEED_SCORING_WEIGHTS) rather than gated to a single hardcoded precinct.
+function candidateVenuesCte(params: { lat: number; lng: number; radiusMeters: number }) {
+  const { lat, lng, radiusMeters } = params;
   return drizzleSql`
     candidate_venues AS (
       SELECT
@@ -282,17 +282,31 @@ function candidateAndOpenNowCte(params: { lat: number; lng: number; radiusMeters
         ST_Distance(v.location, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography) AS distance_m
       FROM venues v
       WHERE ST_DWithin(v.location, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography, ${radiusMeters})
-    ),
-    open_now AS (
+    )
+  `;
+}
+
+// "Venues (from a preceding candidate_venues CTE) with an open venue_hours
+// row for `now`, not closing within `bufferMinutes`" — named `cteName` so
+// getClosingSoonVenues can materialise it twice, once per buffer, without
+// duplicating the openNowSqlCondition wiring.
+function openVenuesCte(cteName: string, now: Date, bufferMinutes: number) {
+  return drizzleSql`
+    ${drizzleSql.raw(cteName)} AS (
       SELECT DISTINCT cv.id
       FROM candidate_venues cv
       JOIN venue_hours vh ON vh.venue_id = cv.id
       WHERE vh.is_closed = false
         AND vh.opens_at IS NOT NULL
         AND vh.closes_at IS NOT NULL
-        AND ${openNowSqlCondition(now, FEED_CLOSING_BUFFER_MINUTES)}
+        AND ${openNowSqlCondition(now, bufferMinutes)}
     )
   `;
+}
+
+function candidateAndOpenNowCte(params: { lat: number; lng: number; radiusMeters: number; now: Date }) {
+  const { lat, lng, radiusMeters, now } = params;
+  return drizzleSql`${candidateVenuesCte({ lat, lng, radiusMeters })}, ${openVenuesCte("open_now", now, FEED_CLOSING_BUFFER_MINUTES)}`;
 }
 
 // Renders the FEED_SCORING_WEIGHTS constant into the ORDER BY expression,
@@ -479,6 +493,38 @@ async function buildAvailabilityMap(rows: FeedCandidateRow[], openNowOnly: boole
   return map;
 }
 
+// Shared enrichment step for every query in this file that returns
+// FeedVenue[]-shaped results: fetches provenance-badge attribute rows and
+// tonight's availability for a candidate row set in one round trip each
+// (regardless of row count), then builds each row's FeedVenue. Centralised
+// here so getFeedVenues, getFeedVenuesWithLocation, and getClosingSoonVenues
+// can't drift on how a FeedCandidateRow becomes a FeedVenue.
+async function buildFeedVenueMap(rows: FeedCandidateRow[], openNowOnly: boolean, now: Date): Promise<Map<string, FeedVenue>> {
+  const [attributeRows, availability] = await Promise.all([
+    fetchAttributeViewRows(rows.map((v) => v.id)),
+    buildAvailabilityMap(rows, openNowOnly, now),
+  ]);
+
+  // Group once (O(rows)) rather than having buildVenueCard filter the full
+  // attribute-rows array per venue (O(venues x rows)) — this runs on every
+  // feed request.
+  const attributesByVenue = new Map<string, typeof attributeRows>();
+  for (const row of attributeRows) {
+    const list = attributesByVenue.get(row.venueId) ?? [];
+    list.push(row);
+    attributesByVenue.set(row.venueId, list);
+  }
+
+  const map = new Map<string, FeedVenue>();
+  for (const row of rows) {
+    map.set(row.id, {
+      ...buildVenueCard(row, attributesByVenue.get(row.id) ?? [], now),
+      availability: availability.get(row.id) ?? { status: "unknown" },
+    });
+  }
+  return map;
+}
+
 // The public read path for a feed page. Attributes are returned exclusively
 // as AttributeView badges (provenance.ts) — there is no path from this
 // function's return value back to a bare venue_attributes value, and no
@@ -489,14 +535,8 @@ export async function getFeedVenues(params: GetFeedVenuesParams): Promise<FeedVe
 
   const openNowOnly = params.openNowOnly ?? true;
   const now = params.now ?? new Date();
-  const [attributeRows, availability] = await Promise.all([
-    fetchAttributeViewRows(rows.map((v) => v.id)),
-    buildAvailabilityMap(rows, openNowOnly, now),
-  ]);
-  return rows.map((venue) => ({
-    ...buildVenueCard(venue, attributeRows, now),
-    availability: availability.get(venue.id) ?? { status: "unknown" },
-  }));
+  const venueMap = await buildFeedVenueMap(rows, openNowOnly, now);
+  return rows.map((row) => venueMap.get(row.id)!);
 }
 
 export interface FeedVenueWithLocation {
@@ -516,15 +556,8 @@ export async function getFeedVenuesWithLocation(params: GetFeedVenuesParams): Pr
 
   const openNowOnly = params.openNowOnly ?? true;
   const now = params.now ?? new Date();
-  const [attributeRows, availability] = await Promise.all([
-    fetchAttributeViewRows(rows.map((v) => v.id)),
-    buildAvailabilityMap(rows, openNowOnly, now),
-  ]);
-  return rows.map((row) => ({
-    venue: { ...buildVenueCard(row, attributeRows, now), availability: availability.get(row.id) ?? { status: "unknown" } },
-    lat: row.lat,
-    lng: row.lng,
-  }));
+  const venueMap = await buildFeedVenueMap(rows, openNowOnly, now);
+  return rows.map((row) => ({ venue: venueMap.get(row.id)!, lat: row.lat, lng: row.lng }));
 }
 
 export interface CountVenuesPerFilterParams {
@@ -546,22 +579,25 @@ export async function countVenuesPerFilter(
 ): Promise<Partial<Record<IntentFilterId, number>>> {
   const { lat, lng, radiusMeters = 2000, now = new Date(), filters } = params;
   const droppable = filters.filter((id) => INTENT_FILTER_REGISTRY_BY_ID.get(id)?.droppable);
+  if (droppable.length === 0) return {};
 
-  const counts: Partial<Record<IntentFilterId, number>> = {};
-  await Promise.all(
-    droppable.map(async (filterId) => {
-      const condition = filterMatchSqlCondition(filterId) ?? drizzleSql`true`;
-      const result = await db.execute<{ count: number }>(drizzleSql`
-        WITH ${candidateAndOpenNowCte({ lat, lng, radiusMeters, now })}
-        SELECT COUNT(*)::int AS count
-        FROM candidate_venues cv
-        JOIN open_now ON open_now.id = cv.id
-        WHERE ${condition}
-      `);
-      counts[filterId] = result.rows[0]?.count ?? 0;
-    }),
+  // One aggregation query over the shared candidate pool rather than one
+  // query per filter — droppable.length used to mean droppable.length
+  // separate round trips against the same candidate_venues/open_now CTEs.
+  const countExprs = droppable.map(
+    (filterId) => drizzleSql`COUNT(*) FILTER (WHERE ${filterMatchSqlCondition(filterId) ?? drizzleSql`true`})::int AS ${drizzleSql.raw(`"${filterId}"`)}`,
   );
 
+  const result = await db.execute<Record<string, number>>(drizzleSql`
+    WITH ${candidateAndOpenNowCte({ lat, lng, radiusMeters, now })}
+    SELECT ${drizzleSql.join(countExprs, drizzleSql`, `)}
+    FROM candidate_venues cv
+    JOIN open_now ON open_now.id = cv.id
+  `);
+
+  const row = result.rows[0] ?? {};
+  const counts: Partial<Record<IntentFilterId, number>> = {};
+  for (const filterId of droppable) counts[filterId] = row[filterId] ?? 0;
   return counts;
 }
 
@@ -576,38 +612,9 @@ export async function getClosingSoonVenues(params: GetFeedVenuesParams): Promise
   const { lat, lng, radiusMeters = 2000, limit = 10, now = new Date() } = params;
 
   const result = await db.execute<FeedCandidateRow>(drizzleSql`
-    WITH candidate_venues AS (
-      SELECT
-        v.id,
-        v.name,
-        v.precinct,
-        v.source,
-        v.location,
-        v.photo_url,
-        v.photo_ref,
-        v.photo_attribution,
-        ST_Distance(v.location, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography) AS distance_m
-      FROM venues v
-      WHERE ST_DWithin(v.location, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography, ${radiusMeters})
-    ),
-    open_no_buffer AS (
-      SELECT DISTINCT cv.id
-      FROM candidate_venues cv
-      JOIN venue_hours vh ON vh.venue_id = cv.id
-      WHERE vh.is_closed = false
-        AND vh.opens_at IS NOT NULL
-        AND vh.closes_at IS NOT NULL
-        AND ${openNowSqlCondition(now, 0)}
-    ),
-    open_with_buffer AS (
-      SELECT DISTINCT cv.id
-      FROM candidate_venues cv
-      JOIN venue_hours vh ON vh.venue_id = cv.id
-      WHERE vh.is_closed = false
-        AND vh.opens_at IS NOT NULL
-        AND vh.closes_at IS NOT NULL
-        AND ${openNowSqlCondition(now, FEED_CLOSING_BUFFER_MINUTES)}
-    ),
+    WITH ${candidateVenuesCte({ lat, lng, radiusMeters })},
+    ${openVenuesCte("open_no_buffer", now, 0)},
+    ${openVenuesCte("open_with_buffer", now, FEED_CLOSING_BUFFER_MINUTES)},
     closing_soon AS (
       SELECT id FROM open_no_buffer
       EXCEPT
@@ -625,14 +632,8 @@ export async function getClosingSoonVenues(params: GetFeedVenuesParams): Promise
 
   if (result.rows.length === 0) return [];
 
-  // Real closesAt (not the synthetic "" used elsewhere), since this section
-  // is specifically labelled "closing soon" — worth showing when it closes.
-  const [attributeRows, availability] = await Promise.all([
-    fetchAttributeViewRows(result.rows.map((v) => v.id)),
-    buildAvailabilityMap(result.rows, false, now),
-  ]);
-  return result.rows.map((venue) => ({
-    ...buildVenueCard(venue, attributeRows, now),
-    availability: availability.get(venue.id) ?? { status: "unknown" },
-  }));
+  // openNowOnly:false, since this section is specifically labelled "closing
+  // soon" and needs the real closesAt (not the synthetic "" used elsewhere).
+  const venueMap = await buildFeedVenueMap(result.rows, false, now);
+  return result.rows.map((row) => venueMap.get(row.id)!);
 }
