@@ -101,6 +101,49 @@ jobs:
           upsert_env "${{ secrets.VERCEL_PROJECT_ID_WEB }}"
           upsert_env "${{ secrets.VERCEL_PROJECT_ID_CONSOLE }}"
 
+      # Vercel's own Git integration deploys on push, which normally
+      # finishes well before this job gets through creating + seeding a
+      # Neon branch and wiring DATABASE_URL above (seeding alone takes
+      # several minutes) — so the deployment already sitting on this PR at
+      # this point was almost always built against whatever DATABASE_URL
+      # this branch had *before* its own preview database existed (no
+      # override yet, or a previous PR's now-deleted branch). Vercel
+      # snapshots env vars per deployment, so patching the env var above
+      # never touches that already-built deployment; only a *new*
+      # deployment picks it up. Forcing one here, now that DATABASE_URL is
+      # actually correct, is what makes preview traffic hit the freshly
+      # seeded database instead of silently reading stale/empty data.
+      - name: Trigger a fresh preview deployment now that DATABASE_URL is correct
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_TEAM_ID: ${{ secrets.VERCEL_ORG_ID }}
+          GIT_BRANCH: ${{ github.event.pull_request.head.ref }}
+          GITHUB_REPO_ID: ${{ github.event.repository.id }}
+        run: |
+          set -euo pipefail
+          # The upsert above returns 200 as soon as Vercel accepts the write,
+          # not once it's visible to whatever resolves env vars for a
+          # brand-new deployment — triggering the deployment immediately
+          # risked it reading the *previous* value (observed once: the new
+          # deployment connected with the prior Neon branch's now-rotated
+          # credentials and every DB query 500'd on "password authentication
+          # failed"). A short settle delay is cheaper than building the
+          # polling this would otherwise need.
+          sleep 15
+          trigger_redeploy() {
+            local project_id="$1"
+            local project_name
+            project_name=$(curl -sS -H "Authorization: Bearer $VERCEL_TOKEN" \
+              "https://api.vercel.com/v9/projects/$project_id?teamId=$VERCEL_TEAM_ID" | jq -r '.name')
+            curl -sS -X POST -H "Authorization: Bearer $VERCEL_TOKEN" -H "Content-Type: application/json" \
+              "https://api.vercel.com/v13/deployments?teamId=$VERCEL_TEAM_ID" \
+              -d "$(jq -n --arg name "$project_name" --arg project "$project_id" --arg branch "$GIT_BRANCH" --arg repoId "$GITHUB_REPO_ID" \
+                '{name: $name, project: $project, target: "preview", gitSource: {type: "github", ref: $branch, repoId: ($repoId | tonumber)}}')" > /dev/null
+          }
+
+          trigger_redeploy "${{ secrets.VERCEL_PROJECT_ID_WEB }}"
+          trigger_redeploy "${{ secrets.VERCEL_PROJECT_ID_CONSOLE }}"
+
       - name: Comment branch name on the PR
         uses: peter-evans/create-or-update-comment@v4
         with:

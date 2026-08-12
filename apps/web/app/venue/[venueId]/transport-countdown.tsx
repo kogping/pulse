@@ -83,7 +83,7 @@ export function TransportCountdown({ hubId, hubName, walkSeconds }: TransportCou
   }
 
   return (
-    <section data-testid="transport-slot" className="flex flex-col gap-1 rounded-lg bg-ink-900 p-4">
+    <section data-testid="transport-slot" className="flex flex-col gap-1 bg-ink-900 p-4">
       <p className="text-sm text-ink-300">{hubName}</p>
 
       {state.kind === "live" ? (

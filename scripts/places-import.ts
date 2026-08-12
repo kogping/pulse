@@ -29,9 +29,10 @@
 // migrations/data loads run from GitHub Actions, never a Vercel build step).
 import { randomUUID } from "node:crypto";
 import { appendFileSync } from "node:fs";
-import { generateSlug, getGooglePlacesEnv } from "@pulse/db";
+import { generateSlug, getGooglePlacesEnv, PRECINCT_REGISTRY } from "@pulse/db";
 import {
   buildGridCells,
+  buildPrecinctCells,
   MAX_RESULTS_PER_CELL,
   MAX_SUBDIVISION_DEPTH,
   parseArgs,
@@ -42,6 +43,14 @@ import {
   type PlaceResult,
 } from "./lib/places/parse";
 import { flushSentry, initSentry } from "./lib/sentry";
+
+// A cell that reliably reproduces (a comedy club precinct, a stadium event
+// night) shouldn't be able to eat the whole run's budget on its own via
+// deep subdivision — bounding the precinct-priority phase separately from
+// `args.maxRequests` guarantees the general grid phase always gets *some*
+// budget too, even if every one of the 26 registered precincts turned out
+// to be maximally dense (worst case ~85 requests each, well under this cap).
+const PRECINCT_PRIORITY_BUDGET_CAP = 1000;
 
 const PLACES_ENDPOINT = "https://places.googleapis.com/v1/places:searchNearby";
 // Google Places API (New) Table A types. No "darts" type exists — darts
@@ -230,24 +239,76 @@ async function startImportRun(): Promise<string | null> {
   }
 }
 
-async function finishImportRun(runId: string | null, result: { status: "succeeded" | "failed"; rows?: number; error?: string }): Promise<void> {
+async function finishImportRun(
+  runId: string | null,
+  result: { status: "succeeded" | "failed"; rows?: number; error?: string; cursor?: number },
+): Promise<void> {
   if (!runId) return;
   try {
     const { db, importRuns } = await import("@pulse/db");
     const { eq } = await import("drizzle-orm");
     await db
       .update(importRuns)
-      .set({ finishedAt: new Date(), status: result.status, rows: result.rows, error: result.error })
+      .set({ finishedAt: new Date(), status: result.status, rows: result.rows, error: result.error, cursor: result.cursor })
       .where(eq(importRuns.id, runId));
   } catch (error) {
     console.warn("[places-import] failed to record import_runs finish", error);
   }
 }
 
+// Where the general (non-precinct-priority) sweep phase should resume —
+// the most recent run's cursor, regardless of whether that run ultimately
+// succeeded or failed, so a crash mid-sweep still counts the ground already
+// covered. 0 (start of the grid) if this is the first run ever, or the
+// grid has grown/shrunk since the last recorded cursor.
+async function readResumeCursor(cellCount: number): Promise<number> {
+  try {
+    const { db, importRuns } = await import("@pulse/db");
+    const { and, desc, eq, isNotNull } = await import("drizzle-orm");
+    const [row] = await db
+      .select({ cursor: importRuns.cursor })
+      .from(importRuns)
+      .where(and(eq(importRuns.source, IMPORT_RUN_SOURCE), isNotNull(importRuns.cursor)))
+      .orderBy(desc(importRuns.startedAt))
+      .limit(1);
+    const cursor = row?.cursor ?? 0;
+    return cursor >= 0 && cursor < cellCount ? cursor : 0;
+  } catch (error) {
+    console.warn("[places-import] failed to read resume cursor, starting from 0", error);
+    return 0;
+  }
+}
+
+// Sweeps one top-level cell (and any quadrants it subdivides into) in
+// isolation — a transient failure anywhere in that recursion (a 429, a
+// network blip) no longer discards every place already found by every
+// other cell this run. Errors are logged, not swallowed silently.
+async function sweepCellSafely(cell: Cell, apiKey: string, seen: Map<string, PlaceResult>, budget: { remaining: number }): Promise<void> {
+  try {
+    await sweepCell(cell, apiKey, seen, budget);
+  } catch (error) {
+    console.warn(`[places-import] cell (${cell.lat.toFixed(4)}, ${cell.lng.toFixed(4)}) failed, continuing`, error);
+  }
+}
+
 // ---- main ------------------------------------------------------------------
 
-function printSummary(cellsSwept: number, placesFound: number, summary: UpsertSummary, dryRun: boolean): void {
-  console.log(`\ncells swept: ${cellsSwept}`);
+function mergeSummary(into: UpsertSummary, from: UpsertSummary): void {
+  into.inserted += from.inserted;
+  into.updated += from.updated;
+  into.skippedClaimed += from.skippedClaimed;
+  into.skippedNoHours += from.skippedNoHours;
+}
+
+function printSummary(
+  precinctCellsSwept: number,
+  generalCellsSwept: number,
+  placesFound: number,
+  summary: UpsertSummary,
+  dryRun: boolean,
+): void {
+  console.log(`\nprecinct-priority cells swept: ${precinctCellsSwept}`);
+  console.log(`general grid cells swept: ${generalCellsSwept}`);
   console.log(`places found: ${placesFound}`);
   console.log(`${dryRun ? "would insert" : "inserted"}: ${summary.inserted}`);
   console.log(`${dryRun ? "would update" : "updated"}: ${summary.updated}`);
@@ -258,7 +319,7 @@ function printSummary(cellsSwept: number, placesFound: number, summary: UpsertSu
   if (!summaryPath) return;
   appendFileSync(
     summaryPath,
-    `## Places import\n\n| cells | found | inserted | updated | skipped (claimed) | no hours |\n| --- | --- | --- | --- | --- | --- |\n| ${cellsSwept} | ${placesFound} | ${summary.inserted} | ${summary.updated} | ${summary.skippedClaimed} | ${summary.skippedNoHours} |\n`,
+    `## Places import\n\n| precinct cells | general cells | found | inserted | updated | skipped (claimed) | no hours |\n| --- | --- | --- | --- | --- | --- | --- |\n| ${precinctCellsSwept} | ${generalCellsSwept} | ${placesFound} | ${summary.inserted} | ${summary.updated} | ${summary.skippedClaimed} | ${summary.skippedNoHours} |\n`,
   );
 }
 
@@ -274,25 +335,61 @@ async function main() {
 
   initSentry();
   const runId = args.dryRun ? null : await startImportRun();
+  const summary: UpsertSummary = { inserted: 0, updated: 0, skippedClaimed: 0, skippedNoHours: 0 };
+  let totalPlacesFound = 0;
+  let nextCursor = 0;
 
   try {
-    const cells = buildGridCells(args.bbox);
-    const seen = new Map<string, PlaceResult>();
-    const budget = { remaining: args.maxRequests };
-
-    for (const cell of cells) {
-      if (budget.remaining <= 0) break;
-      await sweepCell(cell, GOOGLE_PLACES_API_KEY, seen, budget);
+    // Phase 1: every registered precinct's hub, unconditionally, every run —
+    // see PRECINCT_PRIORITY_BUDGET_CAP for why this can't starve phase 2.
+    const precinctCells = buildPrecinctCells(PRECINCT_REGISTRY);
+    const precinctSeen = new Map<string, PlaceResult>();
+    const precinctBudget = { remaining: Math.min(PRECINCT_PRIORITY_BUDGET_CAP, args.maxRequests) };
+    for (const cell of precinctCells) {
+      if (precinctBudget.remaining <= 0) break;
+      await sweepCellSafely(cell, GOOGLE_PLACES_API_KEY, precinctSeen, precinctBudget);
     }
+    const precinctCandidates = [...precinctSeen.values()].map(toCandidate).filter((c): c is CandidateVenue => c !== null);
+    mergeSummary(summary, await upsertCandidates(precinctCandidates, args.dryRun));
+    totalPlacesFound += precinctSeen.size;
+    const requestsUsedByPrecinctPhase = Math.min(PRECINCT_PRIORITY_BUDGET_CAP, args.maxRequests) - precinctBudget.remaining;
 
-    const candidates = [...seen.values()].map(toCandidate).filter((c): c is CandidateVenue => c !== null);
-    const summary = await upsertCandidates(candidates, args.dryRun);
-    printSummary(cells.length, seen.size, summary, args.dryRun);
+    // Phase 2: the general city-wide grid, resuming from wherever the last
+    // run's phase 2 left off (readResumeCursor), wrapping back to the start
+    // once it reaches the end — a continuous, self-refreshing sweep of
+    // everywhere else instead of a one-shot pass.
+    const cells = buildGridCells(args.bbox);
+    const startCursor = args.dryRun ? 0 : await readResumeCursor(cells.length);
+    const generalSeen = new Map<string, PlaceResult>();
+    const generalBudget = { remaining: Math.max(0, args.maxRequests - requestsUsedByPrecinctPhase) };
+    let generalCellsSwept = 0;
+    let cursor = startCursor;
+    for (; generalCellsSwept < cells.length; generalCellsSwept++) {
+      if (generalBudget.remaining <= 0) break;
+      const cell = cells[cursor]!;
+      await sweepCellSafely(cell, GOOGLE_PLACES_API_KEY, generalSeen, generalBudget);
+      cursor = (cursor + 1) % cells.length;
+    }
+    nextCursor = cursor;
+    const generalCandidates = [...generalSeen.values()].map(toCandidate).filter((c): c is CandidateVenue => c !== null);
+    mergeSummary(summary, await upsertCandidates(generalCandidates, args.dryRun));
+    totalPlacesFound += generalSeen.size;
 
-    await finishImportRun(runId, { status: "succeeded", rows: summary.inserted + summary.updated });
+    printSummary(precinctCells.length, generalCellsSwept, totalPlacesFound, summary, args.dryRun);
+
+    await finishImportRun(runId, {
+      status: "succeeded",
+      rows: summary.inserted + summary.updated,
+      cursor: args.dryRun ? undefined : nextCursor,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    await finishImportRun(runId, { status: "failed", error: message });
+    // Best-effort progress already survives via the two upsertCandidates
+    // calls above (each phase writes before the other phase can fail) —
+    // this only means something outside either sweep itself (e.g. the
+    // final bookkeeping) broke. Persisting nextCursor even here means a
+    // phase-2 cursor advance isn't lost just because something after it did.
+    await finishImportRun(runId, { status: "failed", error: message, cursor: args.dryRun ? undefined : nextCursor });
     throw err;
   } finally {
     await flushSentry();

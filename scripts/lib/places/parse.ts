@@ -47,6 +47,15 @@ export function buildGridCells(bbox: [number, number, number, number]): Cell[] {
   return cells;
 }
 
+// One cell per PRECINCT_REGISTRY hub, swept before the general grid every
+// run — see places-import.ts's main() for why: the general sweep's request
+// budget gets consumed by whichever dense cluster it reaches first (subject
+// to subdivision), so without a guaranteed pass over every registered
+// precinct, a suburb can go months without ever being swept at all.
+export function buildPrecinctCells(precincts: { lat: number; lng: number }[]): Cell[] {
+  return precincts.map((precinct) => ({ lat: precinct.lat, lng: precinct.lng, radiusMeters: CELL_RADIUS_METERS, depth: 0 }));
+}
+
 // Recursion trigger for a cell that hit the API's cap — see
 // places-import.ts's sweepCell, which is what actually decides whether to
 // call this (only when a cell's result count == MAX_RESULTS_PER_CELL and

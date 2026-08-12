@@ -22,6 +22,13 @@ export const importRuns = pgTable(
     // counts as fresh for the staleness check.
     status: text("status").notNull(),
     error: text("error"),
+    // scripts/places-import.ts only: index into buildGridCells(DEFAULT_BBOX)
+    // of the next base cell its general (non-precinct-priority) sweep phase
+    // should start from. A full sweep of Greater Sydney costs more requests
+    // than one run's budget comfortably covers once dense clusters trigger
+    // subdivision, so each run resumes from here instead of re-treading the
+    // same ground every time — see that script's `resumeCursor` docs.
+    cursor: integer("cursor"),
   },
   (table) => [index("import_runs_source_started_at_idx").on(table.source, table.startedAt)],
 );

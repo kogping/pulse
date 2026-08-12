@@ -1,12 +1,21 @@
-// Seeds venues across every PRECINCT_REGISTRY precinct with realistic
+// Backfills venues across every PRECINCT_REGISTRY precinct with realistic
 // hours and a spread of attribute ages (fresh / ageing / unconfirmed under
 // the current decay rules), so preview branches and local dev have
 // something worth curating city-wide, not just Newtown/Kings Cross.
-// Idempotent-ish: truncates and re-inserts every run, so it's safe to
-// re-run against a scratch/preview database. Never point this at production.
+// Additive only, never destructive: a Neon preview branch is forked off
+// `production` (preview-db.yml), which may already carry real curator- and
+// Google-Places-sourced venues (and real GTFS transit hubs/departures) —
+// this script must never delete or overwrite any of that. Per precinct, it
+// only inserts synthetic venues where no real coverage already exists
+// nearby (see EXISTING_COVERAGE_RADIUS_METERS), reuses an existing curator/
+// transit hub by email/name instead of re-inserting one, and is safe to
+// re-run against the same database (a second run sees its own first run's
+// rows as "already covered" and skips them). Safe to point at production
+// too, though there should never be a reason to — everything it *does*
+// write is obviously-synthetic fixture data.
 import { neon } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-http";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import {
   correctionFlags,
   curators,
@@ -20,6 +29,15 @@ import {
 } from "../src/schema";
 import { QUALITY_TIERS } from "../src/venue-input";
 import { PRECINCT_REGISTRY } from "../src/precincts";
+
+// "Is there already a real venue right around this precinct's hub" check,
+// radius-based rather than a venues.precinct text match — that column is
+// free text set at import time (real suburb labels like "Haymarket",
+// "Ultimo") and rarely equals a PRECINCT_REGISTRY name, so a text match
+// would almost never detect real coverage (see feed.ts's
+// PRECINCT_ONLY_RADIUS_METERS comment for the same reasoning). Comfortably
+// covers the ~450m bbox synthetic venues themselves get scattered across.
+const EXISTING_COVERAGE_RADIUS_METERS = 800;
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -108,35 +126,49 @@ function slugify(name: string, index: number): string {
 }
 
 async function main() {
-  console.log("Clearing existing seed data...");
-  await db.delete(correctionFlags);
-  await db.delete(scheduledDepartures);
-  await db.delete(venueHubLinks);
-  await db.delete(venueHours);
-  await db.delete(venueAttributes);
-  await db.delete(venues);
-  await db.delete(transitHubs);
-  await db.delete(curators);
-
-  console.log("Seeding curators...");
+  console.log("Ensuring curators exist...");
   // precinctId assigned round-robin across PRECINCTS so the verification
   // queue (packages/db/src/queue.ts) has a scoped curator to seed against in
-  // preview/local dev, not just via AUTH_TEST_CURATORS in e2e.
-  const seededCurators = await db
-    .insert(curators)
-    .values([
-      { email: "alex@pulse.sydney", name: "Alex Nguyen", precinctId: PRECINCTS[0]!.name },
-      { email: "priya@pulse.sydney", name: "Priya Raman", precinctId: PRECINCTS[1]!.name },
-      { email: "sam@pulse.sydney", name: "Sam O'Connell", precinctId: PRECINCTS[0]!.name },
-      // Reviewer access for PR previews (docs/gates/curator-queue-week5.md
-      // needs a real human clicking through /queue, not just Playwright).
-      { email: "iijoshaus@gmail.com", name: "Josh", precinctId: PRECINCTS[0]!.name },
-    ])
-    .returning({ id: curators.id });
+  // preview/local dev, not just via AUTH_TEST_CURATORS in e2e. Looked up by
+  // email first (unique constraint) rather than inserted unconditionally —
+  // a Neon preview branch forked from production may already have any of
+  // these as real allow-listed curators (docs/runbook/curators.md), and
+  // re-inserting would either throw (duplicate email) or, if it didn't,
+  // orphan/hide real verification history attributed to the existing row.
+  const curatorSeeds = [
+    { email: "alex@pulse.sydney", name: "Alex Nguyen", precinctId: PRECINCTS[0]!.name },
+    { email: "priya@pulse.sydney", name: "Priya Raman", precinctId: PRECINCTS[1]!.name },
+    { email: "sam@pulse.sydney", name: "Sam O'Connell", precinctId: PRECINCTS[0]!.name },
+    // Reviewer access for PR previews (docs/gates/curator-queue-week5.md
+    // needs a real human clicking through /queue, not just Playwright).
+    { email: "iijoshaus@gmail.com", name: "Josh", precinctId: PRECINCTS[0]!.name },
+  ];
+  const seededCurators: { id: string }[] = [];
+  for (const seed of curatorSeeds) {
+    const [existing] = await db.select({ id: curators.id }).from(curators).where(eq(curators.email, seed.email)).limit(1);
+    if (existing) {
+      seededCurators.push(existing);
+      continue;
+    }
+    const [inserted] = await db.insert(curators).values(seed).returning({ id: curators.id });
+    if (!inserted) throw new Error(`failed to insert curator ${seed.email}`);
+    seededCurators.push(inserted);
+  }
 
-  console.log("Seeding transit hubs...");
+  console.log("Ensuring transit hubs exist...");
+  // Looked up by name rather than inserted unconditionally — real hubs from
+  // the weekly GTFS import (scripts/gtfs-import.ts) may already occupy this
+  // precinct, and re-inserting would duplicate the hub and, since
+  // scheduledDepartures below is only ever inserted (never cleared),
+  // duplicate its timetable on every run too.
   const hubIdByPrecinct = new Map<string, string>();
   for (const precinct of PRECINCTS) {
+    const [existingHub] = await db.select({ id: transitHubs.id }).from(transitHubs).where(eq(transitHubs.name, precinct.hub.name)).limit(1);
+    if (existingHub) {
+      hubIdByPrecinct.set(precinct.name, existingHub.id);
+      continue;
+    }
+
     const [hub] = await db
       .insert(transitHubs)
       .values({
@@ -148,7 +180,9 @@ async function main() {
     if (!hub) throw new Error(`failed to insert hub for ${precinct.name}`);
     hubIdByPrecinct.set(precinct.name, hub.id);
 
-    // A modest evening timetable, every day of the week.
+    // A modest evening timetable, every day of the week — only for a hub
+    // this run just created; an existing (real or previously-seeded) hub
+    // already has its own.
     const departureRows = [];
     for (let dayOfWeek = 0; dayOfWeek < 7; dayOfWeek++) {
       for (const minute of ["18:00", "18:15", "18:30", "19:00", "19:30", "20:00", "22:00", "23:30"]) {
@@ -165,10 +199,26 @@ async function main() {
   }
 
   const venuesPerPrecinct = 10;
-  console.log(`Seeding ${venuesPerPrecinct * PRECINCTS.length} venues across ${PRECINCTS.length} precincts...`);
+  console.log(`Backfilling up to ${venuesPerPrecinct} venues per precinct across ${PRECINCTS.length} precincts...`);
   let venueCounter = 0;
+  let skippedPrecincts = 0;
 
   for (const precinct of PRECINCTS) {
+    const coverageResult = await db.execute<{ count: number }>(sql`
+      SELECT count(*)::int AS count FROM venues
+      WHERE ST_DWithin(
+        location,
+        ST_SetSRID(ST_MakePoint(${precinct.hub.lon}, ${precinct.hub.lat}), 4326)::geography,
+        ${EXISTING_COVERAGE_RADIUS_METERS}
+      )
+    `);
+    const existingCount = coverageResult.rows[0]?.count ?? 0;
+    if (existingCount > 0) {
+      console.log(`Skipping ${precinct.name} — ${existingCount} venue(s) already within ${EXISTING_COVERAGE_RADIUS_METERS}m`);
+      skippedPrecincts++;
+      continue;
+    }
+
     const [minLon, maxLon, minLat, maxLat] = precinct.bbox;
 
     for (let i = 0; i < venuesPerPrecinct; i++) {
@@ -178,11 +228,11 @@ async function main() {
       const lon = minLon + rand() * (maxLon - minLon);
       const lat = minLat + rand() * (maxLat - minLat);
       // Most (not all) seeded venues get a placeholder photo — Lorem
-      // Picsum, seeded by slug so it's stable across re-seeds — so preview
-      // branches (packages/db/scripts/seed.ts is what they run; the real
-      // Google Places import never touches them) have something to render
-      // in VenueCard/the venue detail page, while still exercising the
-      // no-photo path for a few venues.
+      // Picsum, seeded by slug so it's stable across re-seeds — so a
+      // precinct with no real coverage yet (nothing from the weekly Places
+      // import within EXISTING_COVERAGE_RADIUS_METERS) still has something
+      // to render in VenueCard/the venue detail page, while still
+      // exercising the no-photo path for a few venues.
       const photoUrl = rand() < 0.7 ? `https://picsum.photos/seed/${slug}/800/600` : null;
 
       const [venue] = await db
@@ -284,7 +334,10 @@ async function main() {
     }
   }
 
-  console.log(`Seeded ${venueCounter} venues across ${PRECINCTS.length} precincts.`);
+  console.log(
+    `Seeded ${venueCounter} venues across ${PRECINCTS.length - skippedPrecincts} precincts ` +
+      `(${skippedPrecincts} already had real coverage and were left untouched).`,
+  );
 }
 
 await main();

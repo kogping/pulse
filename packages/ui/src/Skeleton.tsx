@@ -9,7 +9,7 @@ export interface SkeletonProps {
 // invariant #2: freshness is computed, never cached as a stand-in).
 export function Skeleton({ label = "Loading", className = "h-20 w-full" }: SkeletonProps) {
   return (
-    <div role="status" aria-label={label} className={`animate-pulse rounded-lg bg-ink-700 ${className}`}>
+    <div role="status" aria-label={label} className={`animate-pulse bg-ink-700 ${className}`}>
       <span className="sr-only">{label}</span>
     </div>
   );

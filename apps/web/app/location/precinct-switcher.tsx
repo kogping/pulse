@@ -48,7 +48,7 @@ export function PrecinctSwitcher({ currentPrecinctName, filtersParam, precinctOn
       <button
         type="button"
         onClick={handleOpen}
-        className="min-h-touch rounded-full bg-ink-700 px-3 text-sm font-medium text-ink-100"
+        className="min-h-touch bg-ink-700 px-3 text-sm font-medium text-ink-100"
         data-testid="precinct-switcher-open"
       >
         {currentPrecinctName}

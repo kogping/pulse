@@ -113,7 +113,7 @@ function feedCacheBucket(now: Date): number {
 // other — order never affects the AND-composed result.
 function feedCacheFilterHash(filters: {
   radiusMeters: number;
-  limit: number;
+  limit?: number;
   intentFilters: IntentFilterId[];
   openNowOnly: boolean;
   precinctOnly?: boolean;
@@ -147,13 +147,11 @@ function reviveCachedVenues(entries: FeedCacheVenue[]): FeedCacheVenue[] {
   }));
 }
 
-function sortByExactDistance(entries: FeedCacheVenue[], origin: { lat: number; lng: number }, limit: number): FeedCacheVenue[] {
-  return [...entries]
-    .sort(
-      (a, b) =>
-        haversineDistanceMeters(origin, { lat: a.lat, lng: a.lng }) - haversineDistanceMeters(origin, { lat: b.lat, lng: b.lng }),
-    )
-    .slice(0, limit);
+function sortByExactDistance(entries: FeedCacheVenue[], origin: { lat: number; lng: number }, limit?: number): FeedCacheVenue[] {
+  const sorted = [...entries].sort(
+    (a, b) => haversineDistanceMeters(origin, { lat: a.lat, lng: a.lng }) - haversineDistanceMeters(origin, { lat: b.lat, lng: b.lng }),
+  );
+  return limit !== undefined ? sorted.slice(0, limit) : sorted;
 }
 
 function toResult(
@@ -171,7 +169,7 @@ function toResult(
 // CLAUDE.md. `deps.fetchVenues` is the only path that ever hits Postgres;
 // everything above it is cache bookkeeping around that one call.
 export async function getFeedWithCache(params: FeedCacheParams, deps: FeedCacheDeps): Promise<FeedCacheResult> {
-  const { lat, lng, radiusMeters = 2000, limit = 10, filters = [], openNowOnly = true, precinctOnly } = params;
+  const { lat, lng, radiusMeters = 2000, limit, filters = [], openNowOnly = true, precinctOnly } = params;
   const now = params.now ?? new Date();
   const logger = deps.logger ?? consoleLogger;
   const recordMetric = deps.recordMetric ?? (() => {});

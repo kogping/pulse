@@ -166,11 +166,17 @@ export default async function Home({ searchParams }: HomeProps) {
   const precinctOnlyParam = typeof params.precinctOnly === "string" ? params.precinctOnly : undefined;
   const precinctOnly = precinctOnlyParam === "1";
 
+  // F1.8: "Open now" defaults on — only `openNow=0` turns it off. Computed
+  // here (ahead of the gate branch below) so it survives the same
+  // drop-and-restore round trip through LocationGate that filtersParam and
+  // precinctOnlyParam already do — see feedHref's comment.
+  const openNowParam = typeof params.openNow === "string" ? params.openNow : undefined;
+
   if (!precinct || lat === undefined || lng === undefined || Number.isNaN(lat) || Number.isNaN(lng)) {
     return (
       <main className="mx-auto flex min-h-dvh w-full max-w-[430px] flex-col gap-4 px-4 pb-safe-b pt-safe-t">
         <h1 className="pt-4 text-2xl font-semibold text-ink-50">Pulse — what's good tonight</h1>
-        <LocationGate filtersParam={filtersParam} precinctOnlyParam={precinctOnlyParam} />
+        <LocationGate filtersParam={filtersParam} precinctOnlyParam={precinctOnlyParam} openNowParam={openNowParam} />
       </main>
     );
   }
@@ -184,11 +190,9 @@ export default async function Home({ searchParams }: HomeProps) {
   const activeFilters = accessibilityEnabled ? requestedFilters : requestedFilters.filter((id) => id !== "accessible");
   const visibleFilterDefs = INTENT_FILTER_REGISTRY.filter((def) => def.id !== "accessible" || accessibilityEnabled);
 
-  // F1.8: "Open now" defaults on (F1.1-F1.4's existing behaviour) — only
-  // `openNow=0` turns it off. Anything else in the param (missing, "1",
-  // garbage) is treated as "on", so a malformed/stale link degrades to the
-  // safer default rather than silently showing closed venues.
-  const openNowParam = typeof params.openNow === "string" ? params.openNow : undefined;
+  // F1.8: anything but the literal "0" (missing, "1", garbage) is treated
+  // as "on", so a malformed/stale link degrades to the safer default rather
+  // than silently showing closed venues.
   const openNowOnly = openNowParam !== "0";
 
   // F1.5: `_mapEnabled` is a test-only override for map.spec.ts, honoured
@@ -257,7 +261,7 @@ export default async function Home({ searchParams }: HomeProps) {
       </div>
 
       {relaxation.disclosure ? (
-        <p className="rounded-lg bg-ink-700 px-4 py-2 text-sm text-ink-100">{relaxation.disclosure}</p>
+        <p className="bg-ink-700 px-4 py-2 text-sm text-ink-100">{relaxation.disclosure}</p>
       ) : null}
 
       {relaxation.venues.length > 0 ? (

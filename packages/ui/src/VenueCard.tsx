@@ -30,9 +30,9 @@ export interface VenueCardProps {
 
 export function VenueCard({ name, precinct, source, attributes, lastEntry, photo, availabilityLabel, distanceLabel }: VenueCardProps) {
   return (
-    <article className="flex flex-col gap-3 rounded-xl bg-ink-900 p-4">
+    <article className="flex flex-col gap-3 bg-ink-900 p-4">
       {photo ? (
-        <div className="relative -mx-4 -mt-4 overflow-hidden rounded-t-xl">
+        <div className="relative -mx-4 -mt-4 overflow-hidden">
           <img src={photo.src} alt={name} className="h-40 w-full object-cover" loading="lazy" />
           {photo.attribution ? (
             <p className="absolute bottom-1 right-2 text-[10px] text-ink-50/80">Photo: {photo.attribution}</p>

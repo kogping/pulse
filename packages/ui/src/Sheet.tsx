@@ -23,7 +23,7 @@ export function Sheet({ title, open, onClose, children }: SheetProps) {
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="relative z-10 flex max-h-[85vh] w-full flex-col gap-4 rounded-t-2xl bg-ink-900 px-4 pb-safe-b pt-4"
+        className="relative z-10 flex max-h-[85vh] w-full flex-col gap-4 bg-ink-900 px-4 pb-safe-b pt-4"
       >
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-ink-50">{title}</h2>

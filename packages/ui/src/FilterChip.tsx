@@ -10,7 +10,7 @@ export interface FilterChipProps {
 }
 
 const CHIP_CLASS_NAME =
-  "inline-flex min-h-touch items-center rounded-full px-4 text-sm font-medium";
+  "inline-flex min-h-touch items-center px-4 text-sm font-medium";
 
 // Selected uses a dark label on the light accent-subtle fill rather than a
 // light label on solid accent — accent-on-ink and ink-50-on-accent both

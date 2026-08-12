@@ -43,7 +43,7 @@ export function ListMapToggle({ pins, children }: ListMapToggleProps) {
           data-testid="map-toggle"
           aria-pressed={view === "map"}
           onClick={toggle}
-          className="inline-flex min-h-touch items-center rounded-full bg-ink-700 px-4 text-sm font-medium text-ink-100"
+          className="inline-flex min-h-touch items-center bg-ink-700 px-4 text-sm font-medium text-ink-100"
         >
           {view === "map" ? "List" : "Map"}
         </button>
