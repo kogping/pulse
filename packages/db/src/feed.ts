@@ -203,7 +203,14 @@ function openNowSqlCondition(now: Date, bufferMinutes: number) {
       vh.day_of_week = EXTRACT(DOW FROM ${localNow})::int
       AND vh.closes_at <= vh.opens_at
       AND ${localNow}::time >= vh.opens_at
-      AND ${localNow}::time + interval '1 minute' * ${bufferMinutes} < vh.closes_at + interval '24 hours'
+      -- Not "vh.closes_at + interval '24 hours'": Postgres's time + interval
+      -- wraps modulo 24h (00:00 + 24h = 00:00, 03:00 + 24h = 03:00 — never
+      -- anything larger), so that comparison was silently always false for
+      -- the entire evening portion of any midnight-spanning shift, well
+      -- before it was ever close to actually closing. EXTRACT(EPOCH ...)
+      -- into plain numeric seconds sidesteps the time type's wraparound
+      -- entirely, the same way isOpenWithBuffer's closingMinutes + 1440 does.
+      AND EXTRACT(EPOCH FROM ${localNow}::time) + 60 * ${bufferMinutes} < EXTRACT(EPOCH FROM vh.closes_at) + 86400
     )
     OR (
       vh.day_of_week = EXTRACT(DOW FROM (${localNow} - interval '1 day'))::int
