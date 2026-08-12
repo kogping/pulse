@@ -3,10 +3,8 @@ import { getFeedWithCache, type FeedCacheLogger, type FeedCacheMetricEvent } fro
 import { runRelaxationLadder, type RelaxationResult } from "./relaxation";
 
 export interface LoadFeedParams {
-  /** No longer used to filter candidates — the feed is city-wide (see
-   *  feed.ts's candidateAndOpenNowCte). Kept on the type because callers
-   *  (the feed API route, the page) still carry a display label alongside
-   *  lat/lng; loadFeed itself ignores it. */
+  /** Display label only — not used to filter candidates. See
+   *  `precinctOnly` for the actual opt-in "this suburb only" restriction. */
   precinct: string;
   lat: number;
   lng: number;
@@ -15,6 +13,13 @@ export interface LoadFeedParams {
   filters: IntentFilterId[];
   /** F1.8. Defaults true inside runRelaxationLadder when omitted. */
   openNowOnly?: boolean;
+  /** Opt-in "this suburb only" restriction (feed.ts's `precinctOnly` —
+   *  clamps the effective radius rather than matching venues.precinct, since
+   *  that free-text column doesn't reliably match a picked precinct's
+   *  label). False/omitted (the default) means city-wide — picking a
+   *  precinct only seeds the ranking origin (lat/lng) unless the visitor
+   *  has explicitly asked to see this suburb only. */
+  precinctOnly?: boolean;
 }
 
 export interface LoadFeedDeps {
@@ -33,7 +38,7 @@ export interface LoadFeedResult extends RelaxationResult {
 // both the API route and the feed page assemble these dependencies, so
 // neither can drift on how a rung's radius/filters map onto real reads.
 export async function loadFeed(params: LoadFeedParams, deps: LoadFeedDeps = {}): Promise<LoadFeedResult> {
-  const { lat, lng, limit, now, filters, openNowOnly } = params;
+  const { lat, lng, limit, now, filters, openNowOnly, precinctOnly } = params;
 
   const venueLocations: Record<string, { lat: number; lng: number }> = {};
 
@@ -42,15 +47,15 @@ export async function loadFeed(params: LoadFeedParams, deps: LoadFeedDeps = {}):
     {
       fetchVenues: async ({ radiusMeters, filters: rungFilters, openNowOnly: rungOpenNowOnly }) => {
         const { venues, locations } = await getFeedWithCache(
-          { lat, lng, radiusMeters, limit, now, filters: rungFilters, openNowOnly: rungOpenNowOnly },
+          { lat, lng, radiusMeters, limit, now, filters: rungFilters, openNowOnly: rungOpenNowOnly, precinctOnly },
           { redis, fetchVenues: getFeedVenuesWithLocation, logger: deps.logger, recordMetric: deps.recordMetric },
         );
         Object.assign(venueLocations, locations);
         return venues;
       },
       countVenuesPerFilter: ({ radiusMeters, filters: rungFilters }) =>
-        countVenuesPerFilter({ lat, lng, radiusMeters, now, filters: rungFilters }),
-      fetchClosingSoon: ({ radiusMeters }) => getClosingSoonVenues({ lat, lng, radiusMeters, limit, now }),
+        countVenuesPerFilter({ lat, lng, radiusMeters, now, filters: rungFilters, precinctOnly }),
+      fetchClosingSoon: ({ radiusMeters }) => getClosingSoonVenues({ lat, lng, radiusMeters, limit, now, precinctOnly }),
     },
   );
 

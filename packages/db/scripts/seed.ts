@@ -1,6 +1,7 @@
-// Seeds 30 venues across 2 precincts with realistic hours and a spread of
-// attribute ages (fresh / ageing / unconfirmed under the current decay
-// rules), so preview branches and local dev have something worth curating.
+// Seeds venues across every PRECINCT_REGISTRY precinct with realistic
+// hours and a spread of attribute ages (fresh / ageing / unconfirmed under
+// the current decay rules), so preview branches and local dev have
+// something worth curating city-wide, not just Newtown/Kings Cross.
 // Idempotent-ish: truncates and re-inserts every run, so it's safe to
 // re-run against a scratch/preview database. Never point this at production.
 import { neon } from "@neondatabase/serverless";
@@ -18,6 +19,7 @@ import {
   verificationEvents,
 } from "../src/schema";
 import { QUALITY_TIERS } from "../src/venue-input";
+import { PRECINCT_REGISTRY } from "../src/precincts";
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -33,18 +35,24 @@ interface Precinct {
   hub: { name: string; mode: string; lon: number; lat: number };
 }
 
-const PRECINCTS: Precinct[] = [
-  {
-    name: "Newtown",
-    bbox: [151.176, 151.184, -33.901, -33.893],
-    hub: { name: "Newtown Station", mode: "train", lon: 151.1795, lat: -33.8975 },
-  },
-  {
-    name: "Kings Cross",
-    bbox: [151.219, 151.227, -33.877, -33.869],
-    hub: { name: "Kings Cross Station", mode: "train", lon: 151.2232, lat: -33.8737 },
-  },
-];
+// One synthetic Precinct per PRECINCT_REGISTRY entry, centred on that
+// precinct's real hub coordinates — same ~450m bbox width the original
+// Newtown/Kings Cross-only version of this script used, just generated for
+// all 26 rather than two hand-written entries. Order matches the registry,
+// which keeps Newtown/Kings Cross first (PRECINCTS[0]/[1], still relied on
+// by the curator-seeding step below) since that's the registry's own order.
+const BBOX_HALF_WIDTH_DEGREES = 0.004;
+
+const PRECINCTS: Precinct[] = PRECINCT_REGISTRY.map((precinct) => ({
+  name: precinct.name,
+  bbox: [
+    precinct.lng - BBOX_HALF_WIDTH_DEGREES,
+    precinct.lng + BBOX_HALF_WIDTH_DEGREES,
+    precinct.lat - BBOX_HALF_WIDTH_DEGREES,
+    precinct.lat + BBOX_HALF_WIDTH_DEGREES,
+  ],
+  hub: { name: `${precinct.name} Station`, mode: "train", lon: precinct.lng, lat: precinct.lat },
+}));
 
 const VENUE_NAME_PARTS = {
   prefixes: ["The", "Little", "Old", "Golden", "Night", "Southside", "Backstreet", "Corner", "Neon", "Velvet"],
@@ -156,8 +164,8 @@ async function main() {
     await db.insert(scheduledDepartures).values(departureRows);
   }
 
-  console.log("Seeding 30 venues...");
-  const venuesPerPrecinct = 15;
+  const venuesPerPrecinct = 10;
+  console.log(`Seeding ${venuesPerPrecinct * PRECINCTS.length} venues across ${PRECINCTS.length} precincts...`);
   let venueCounter = 0;
 
   for (const precinct of PRECINCTS) {

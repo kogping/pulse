@@ -10,12 +10,16 @@ import { rememberPrecinct } from "./storage";
 export interface PrecinctSwitcherProps {
   currentPrecinctName: string;
   filtersParam?: string;
+  // Carries the opt-in "this suburb only" restriction across a manual
+  // switch — if it was on, it stays on, now scoped to the newly picked
+  // precinct, rather than silently reverting to city-wide.
+  precinctOnlyParam?: string;
 }
 
 // The always-available "changeable from header" side of F1.1 — reopening
 // this never re-triggers the browser's geolocation permission prompt, it
 // only ever offers the manual picker.
-export function PrecinctSwitcher({ currentPrecinctName, filtersParam }: PrecinctSwitcherProps) {
+export function PrecinctSwitcher({ currentPrecinctName, filtersParam, precinctOnlyParam }: PrecinctSwitcherProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [precincts, setPrecincts] = useState<PrecinctOption[]>([]);
@@ -35,6 +39,7 @@ export function PrecinctSwitcher({ currentPrecinctName, filtersParam }: Precinct
     setOpen(false);
     const params = new URLSearchParams({ precinct: precinct.name, lat: String(precinct.lat), lng: String(precinct.lng) });
     if (filtersParam) params.set("filters", filtersParam);
+    if (precinctOnlyParam) params.set("precinctOnly", precinctOnlyParam);
     router.replace(`/?${params.toString()}`);
   }
 
