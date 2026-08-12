@@ -121,6 +121,15 @@ jobs:
           GITHUB_REPO_ID: ${{ github.event.repository.id }}
         run: |
           set -euo pipefail
+          # The upsert above returns 200 as soon as Vercel accepts the write,
+          # not once it's visible to whatever resolves env vars for a
+          # brand-new deployment — triggering the deployment immediately
+          # risked it reading the *previous* value (observed once: the new
+          # deployment connected with the prior Neon branch's now-rotated
+          # credentials and every DB query 500'd on "password authentication
+          # failed"). A short settle delay is cheaper than building the
+          # polling this would otherwise need.
+          sleep 15
           trigger_redeploy() {
             local project_id="$1"
             local project_name
