@@ -38,8 +38,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build @pulse/db
-        run: pnpm --filter @pulse/db build
+      # scripts/lib/sentry.ts imports @pulse/analytics (scrubPii) — without
+      # building it too, tsx resolves it at runtime against a nonexistent
+      # dist/ and the whole run crashes before a single Places request goes
+      # out (MODULE_NOT_FOUND). @pulse/db needs its own build for the same
+      # reason (the script imports compiled output, not source).
+      - name: Build @pulse/db and @pulse/analytics
+        run: pnpm --filter @pulse/db --filter @pulse/analytics build
 
       - name: Import
         run: pnpm places:import
