@@ -11,6 +11,7 @@ import {
   type IntentFilterId,
 } from "@pulse/db";
 import { getFlag } from "@pulse/config";
+import { formatDistance } from "./feed/distance";
 import { FeedAnalytics } from "./feed/feed-analytics";
 import { ListMapToggle } from "./feed/list-map-toggle";
 import { loadFeed, type LoadFeedResult } from "./feed/load-feed";
@@ -37,7 +38,12 @@ function availabilityLabel(availability: FeedVenueAvailability): string {
   }
 }
 
-function venueCardProps(venue: FeedVenue, openNowOnly: boolean) {
+function venueCardProps(
+  venue: FeedVenue,
+  openNowOnly: boolean,
+  visitor: { lat: number; lng: number },
+  venueLocations: Record<string, { lat: number; lng: number }>,
+) {
   const lastEntry = venue.attributes.find(isLastEntry);
   const badgeAttributes = venue.attributes
     .filter((attribute) => !isLastEntry(attribute))
@@ -53,6 +59,8 @@ function venueCardProps(venue: FeedVenue, openNowOnly: boolean) {
         ? { src: `/api/venue-photo/${venue.id}`, attribution: venue.photo.attribution }
         : undefined;
 
+  const venueLocation = venueLocations[venue.id];
+
   return {
     name: venue.name,
     precinct: venue.precinct,
@@ -64,6 +72,7 @@ function venueCardProps(venue: FeedVenue, openNowOnly: boolean) {
         : undefined,
     photo,
     availabilityLabel: openNowOnly ? undefined : availabilityLabel(venue.availability),
+    distanceLabel: venueLocation ? formatDistance(visitor, venueLocation) : undefined,
   };
 }
 
@@ -71,12 +80,12 @@ function venueCardProps(venue: FeedVenue, openNowOnly: boolean) {
 // entirely on map_enabled — when the flag is off the toggle control (and
 // mapbox-gl, via list-map-toggle.tsx's dynamic import) never renders at
 // all, not merely a disabled button.
-function renderVenueList(relaxation: LoadFeedResult, mapEnabled: boolean, openNowOnly: boolean) {
+function renderVenueList(relaxation: LoadFeedResult, mapEnabled: boolean, openNowOnly: boolean, visitor: { lat: number; lng: number }) {
   const list = (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {relaxation.venues.map((venue, index) => (
         <Link key={venue.id} href={`/venue/${venue.id}?position=${index}&source=feed`}>
-          <VenueCard {...venueCardProps(venue, openNowOnly)} />
+          <VenueCard {...venueCardProps(venue, openNowOnly, visitor, relaxation.venueLocations)} />
         </Link>
       ))}
     </div>
@@ -87,7 +96,22 @@ function renderVenueList(relaxation: LoadFeedResult, mapEnabled: boolean, openNo
   const pins = relaxation.venues
     .map((venue) => {
       const location = relaxation.venueLocations[venue.id];
-      return location ? { id: venue.id, name: venue.name, lat: location.lat, lng: location.lng } : null;
+      if (!location) return null;
+      const photo =
+        venue.photo.kind === "curator"
+          ? { src: venue.photo.url, attribution: null }
+          : venue.photo.kind === "places"
+            ? { src: `/api/venue-photo/${venue.id}`, attribution: venue.photo.attribution }
+            : undefined;
+      return {
+        id: venue.id,
+        name: venue.name,
+        lat: location.lat,
+        lng: location.lng,
+        photo,
+        description: venue.curatorPitch,
+        distanceLabel: formatDistance(visitor, location),
+      };
     })
     .filter((pin) => pin !== null);
 
@@ -212,7 +236,7 @@ export default async function Home({ searchParams }: HomeProps) {
       ) : null}
 
       {relaxation.venues.length > 0 ? (
-        renderVenueList(relaxation, mapEnabled, openNowOnly)
+        renderVenueList(relaxation, mapEnabled, openNowOnly, { lat, lng })
       ) : (
         <EmptyState heading="Nothing nearby right now" body="Try clearing a filter or checking back later." />
       )}
@@ -228,7 +252,7 @@ export default async function Home({ searchParams }: HomeProps) {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {relaxation.closingSoon.map((venue, index) => (
               <Link key={venue.id} href={`/venue/${venue.id}?position=${index}&source=closing_soon`}>
-                <VenueCard {...venueCardProps(venue, true)} />
+                <VenueCard {...venueCardProps(venue, true, { lat, lng }, relaxation.venueLocations)} />
               </Link>
             ))}
           </div>

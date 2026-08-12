@@ -17,6 +17,7 @@ function venue(id: string): FeedVenue {
     source: "curator",
     attributes: [],
     photo: { kind: "none" },
+    curatorPitch: null,
     availability: { status: "open", closesAt: "23:00", spansMidnight: false },
   };
 }

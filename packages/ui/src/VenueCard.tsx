@@ -21,9 +21,14 @@ export interface VenueCardProps {
    *  card is guaranteed open, so this is omitted rather than shown on
    *  every card as redundant noise). */
   availabilityLabel?: string;
+  /** Precomputed by the caller (apps/web/app/feed/distance.ts) from the
+   *  visitor's in-request coordinates and the venue's own location — never
+   *  omitted for lack of a value, only when the caller has no visitor
+   *  coordinates to compute from at all. */
+  distanceLabel?: string;
 }
 
-export function VenueCard({ name, precinct, source, attributes, lastEntry, photo, availabilityLabel }: VenueCardProps) {
+export function VenueCard({ name, precinct, source, attributes, lastEntry, photo, availabilityLabel, distanceLabel }: VenueCardProps) {
   return (
     <article className="flex flex-col gap-3 rounded-xl bg-ink-900 p-4">
       {photo ? (
@@ -36,7 +41,10 @@ export function VenueCard({ name, precinct, source, attributes, lastEntry, photo
       ) : null}
       <div>
         <h3 className="text-lg font-semibold text-ink-50">{name}</h3>
-        <p className="text-sm text-ink-300">{precinct}</p>
+        <p className="text-sm text-ink-300">
+          {precinct}
+          {distanceLabel ? <span className="text-ink-400"> · {distanceLabel}</span> : null}
+        </p>
       </div>
       {availabilityLabel ? <p className="text-xs text-ink-300">{availabilityLabel}</p> : null}
       {source === "google_places" ? (

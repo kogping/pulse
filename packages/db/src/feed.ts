@@ -279,6 +279,7 @@ function candidateVenuesCte(params: { lat: number; lng: number; radiusMeters: nu
         v.photo_url,
         v.photo_ref,
         v.photo_attribution,
+        v.curator_pitch,
         ST_Distance(v.location, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography) AS distance_m
       FROM venues v
       WHERE ST_DWithin(v.location, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography, ${radiusMeters})
@@ -373,6 +374,7 @@ interface FeedCandidateRow extends Record<string, unknown> {
   photoUrl: string | null;
   photoRef: string | null;
   photoAttribution: string | null;
+  curatorPitch: string | null;
 }
 
 // Shared query body for the feed ranking pipeline (F1.1-F1.4): venues within
@@ -423,6 +425,7 @@ async function runFeedRankingQuery(params: GetFeedVenuesParams): Promise<FeedCan
         cv.photo_url,
         cv.photo_ref,
         cv.photo_attribution,
+        cv.curator_pitch,
         ${isOpenNowColumn},
         LEAST(cv.distance_m / ${DISTANCE_NORMALISER_METERS}::float, 1) AS normalised_distance,
         COALESCE(bf.freshness_score, 0) AS freshness_score
@@ -434,6 +437,7 @@ async function runFeedRankingQuery(params: GetFeedVenuesParams): Promise<FeedCan
     SELECT
       id, name, precinct, source,
       photo_url AS "photoUrl", photo_ref AS "photoRef", photo_attribution AS "photoAttribution",
+      curator_pitch AS "curatorPitch",
       ST_Y(location::geometry) AS lat, ST_X(location::geometry) AS lng
     FROM scored
     ORDER BY ${scoreSqlExpression(!openNowOnly)} DESC
@@ -623,6 +627,7 @@ export async function getClosingSoonVenues(params: GetFeedVenuesParams): Promise
     SELECT
       cv.id, cv.name, cv.precinct, cv.source,
       cv.photo_url AS "photoUrl", cv.photo_ref AS "photoRef", cv.photo_attribution AS "photoAttribution",
+      cv.curator_pitch AS "curatorPitch",
       ST_Y(cv.location::geometry) AS lat, ST_X(cv.location::geometry) AS lng
     FROM candidate_venues cv
     JOIN closing_soon cs ON cs.id = cv.id
