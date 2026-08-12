@@ -6,6 +6,7 @@ on:
     paths:
       - "packages/db/migrations/**"
       - "packages/db/src/schema/**"
+  workflow_dispatch: {}
 
 concurrency:
   group: migrate-${{ github.workflow }}
