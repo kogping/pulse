@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { fetchPrecincts, resolveLocation, type PrecinctOption } from "./api";
 import { PrecinctPicker } from "./precinct-picker";
 import { readRememberedPrecinct, rememberPrecinct, forgetRememberedPrecinct } from "./storage";
-import { geohashDecode, geohashEncode } from "../api/feed/geohash";
+import { geohashDecode, geohashEncode, haversineDistanceMeters } from "../api/feed/geohash";
 
 // City-wide ranking (feed.ts's FEED_SCORING_WEIGHTS.distance) needs the
 // visitor's real position, not a precinct hub centroid, or "closest first"
@@ -19,6 +19,17 @@ import { geohashDecode, geohashEncode } from "../api/feed/geohash";
 function toGeohash6Cell(lat: number, lng: number): { lat: number; lng: number } {
   return geohashDecode(geohashEncode(lat, lng, 6));
 }
+
+// A visitor's real position only makes a better ranking origin than the
+// resolved precinct's own hub when they're actually somewhere in Sydney —
+// otherwise (testing from another city, a laptop with a coarse/wrong IP
+// geolocation fix, etc.) their real coordinates are outside every venue's
+// relaxation-ladder radius (feed/relaxation.ts's RADIUS_LADDER_METERS tops
+// out at 6km) and the feed comes back empty no matter which suburb they
+// picked. 25km comfortably covers PRECINCT_REGISTRY's full spread
+// (Parramatta to Bondi Beach, Manly to Cronulla) with room to spare, so
+// anyone genuinely in metro Sydney is always well inside it.
+const COVERAGE_MAX_DISTANCE_METERS = 25_000;
 
 // >3s of waiting on geolocation reads as broken, not as "still working" —
 // F1.1's slow-geolocation branch renders the picker instead of a spinner.
@@ -77,14 +88,21 @@ export function LocationGate({ filtersParam, precinctOnlyParam }: LocationGatePr
       if (cancelled || bailedToPicker.current) return;
 
       if (result.status === "resolved") {
-        // The visitor's raw coordinates went to /api/location/resolve only
-        // to find the nearest area label (result.precinct.name) — the
-        // redirect itself carries the visitor's *own* position, truncated
-        // to a geohash-6 cell, so the feed actually ranks by proximity to
-        // where they are rather than to the area's hub centroid.
         rememberPrecinct({ id: result.precinct.id, name: result.precinct.name });
-        const cell = toGeohash6Cell(latitude, longitude);
-        router.replace(targetHref(result.precinct, cell.lat, cell.lng, filtersParam, precinctOnlyParam));
+        // The visitor's raw coordinates went to /api/location/resolve only
+        // to find the nearest area label (result.precinct.name). When
+        // they're actually near it, the redirect carries their *own*
+        // position (truncated to a geohash-6 cell) so the feed ranks by
+        // proximity to where they really are rather than to the area's hub
+        // centroid. But "nearest enabled precinct" still returns *a*
+        // precinct even when the visitor is nowhere near Sydney at all —
+        // falling back to the hub centroid there is what keeps the feed
+        // non-empty instead of ranking from a real position outside every
+        // venue's search radius (see COVERAGE_MAX_DISTANCE_METERS above).
+        const distanceToHub = haversineDistanceMeters({ lat: latitude, lng: longitude }, result.precinct);
+        const origin =
+          distanceToHub <= COVERAGE_MAX_DISTANCE_METERS ? toGeohash6Cell(latitude, longitude) : result.precinct;
+        router.replace(targetHref(result.precinct, origin.lat, origin.lng, filtersParam, precinctOnlyParam));
         return;
       }
       // Transient resolve failure — fall back to letting the visitor pick.
