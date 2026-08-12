@@ -25,11 +25,17 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   const photoRef = await getVenuePhotoRef(venueId);
   if (!photoRef) return NextResponse.json({ error: "no photo for this venue" }, { status: 404 });
 
-  const { GOOGLE_PLACES_API_KEY } = getGooglePlacesEnv();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
   try {
+    // getGooglePlacesEnv() is called inside the try, not before it — it
+    // throws (via zod) when GOOGLE_PLACES_API_KEY is unset, and this route
+    // runs on every request in apps/web, unlike the getter's other caller
+    // (scripts/places-import.ts, a GitHub Actions job). A missing key must
+    // degrade to the same honest 404 as any other photo failure below, not
+    // an unhandled 500 (CLAUDE.md invariant #5).
+    const { GOOGLE_PLACES_API_KEY } = getGooglePlacesEnv();
     const res = await fetch(`${PLACES_BASE_URL}/${photoRef}/media?maxWidthPx=${MAX_WIDTH_PX}&key=${GOOGLE_PLACES_API_KEY}`, {
       signal: controller.signal,
     });

@@ -71,10 +71,13 @@ export function getMapboxEnv(): MapboxEnv {
   return mapboxCached;
 }
 
-// Only ever called by scripts/places-import.ts (a GitHub Actions job, never
-// a Vercel build/request path) — kept as its own narrow getter for the same
-// reason as the others above: a missing Places key must fail that one
-// script, not any unrelated getEnv() caller.
+// Called by scripts/places-import.ts (a GitHub Actions job) and by
+// apps/web's /api/venue-photo route on every request — kept as its own
+// narrow getter for the same reason as the others above: a missing Places
+// key must fail only callers that touch Places, not any unrelated getEnv()
+// caller. The route call site must catch this getter's throw itself (it
+// runs per-request, unlike the one-shot import script) and degrade to a 404
+// rather than let it become an unhandled 500.
 export function getGooglePlacesEnv(): GooglePlacesEnv {
   if (!googlePlacesCached) {
     googlePlacesCached = googlePlacesEnvSchema.parse({ GOOGLE_PLACES_API_KEY: process.env.GOOGLE_PLACES_API_KEY });
