@@ -46,12 +46,25 @@ export interface LocationGateProps {
   // it's a distinct concept: whether to restrict results, not where to rank
   // from.
   precinctOnlyParam?: string;
+  // Same preservation for the F1.8 "Open now" toggle (page.tsx's
+  // openNowParam) — without this, every filter-chip click (feedHref never
+  // carries precinct/lat/lng) bounces through this gate and silently reset
+  // openNow to its default, since nothing here knew to restore it.
+  openNowParam?: string;
 }
 
-function targetHref(precinct: PrecinctOption, lat: number, lng: number, filtersParam?: string, precinctOnlyParam?: string): string {
+function targetHref(
+  precinct: PrecinctOption,
+  lat: number,
+  lng: number,
+  filtersParam?: string,
+  precinctOnlyParam?: string,
+  openNowParam?: string,
+): string {
   const params = new URLSearchParams({ precinct: precinct.name, lat: String(lat), lng: String(lng) });
   if (filtersParam) params.set("filters", filtersParam);
   if (precinctOnlyParam) params.set("precinctOnly", precinctOnlyParam);
+  if (openNowParam) params.set("openNow", openNowParam);
   return `/?${params.toString()}`;
 }
 
@@ -60,7 +73,7 @@ function targetHref(precinct: PrecinctOption, lat: number, lng: number, filtersP
 // picker. Coverage is city-wide, so a granted geolocation always resolves —
 // the happy path never renders anything here — it replaces the URL with a
 // precinct-qualified one and Home re-renders server-side from there.
-export function LocationGate({ filtersParam, precinctOnlyParam }: LocationGateProps) {
+export function LocationGate({ filtersParam, precinctOnlyParam, openNowParam }: LocationGateProps) {
   const router = useRouter();
   const [state, setState] = useState<GateState>("resolving");
   const [precincts, setPrecincts] = useState<PrecinctOption[]>([]);
@@ -102,7 +115,7 @@ export function LocationGate({ filtersParam, precinctOnlyParam }: LocationGatePr
         const distanceToHub = haversineDistanceMeters({ lat: latitude, lng: longitude }, result.precinct);
         const origin =
           distanceToHub <= COVERAGE_MAX_DISTANCE_METERS ? toGeohash6Cell(latitude, longitude) : result.precinct;
-        router.replace(targetHref(result.precinct, origin.lat, origin.lng, filtersParam, precinctOnlyParam));
+        router.replace(targetHref(result.precinct, origin.lat, origin.lng, filtersParam, precinctOnlyParam, openNowParam));
         return;
       }
       // Transient resolve failure — fall back to letting the visitor pick.
@@ -139,7 +152,9 @@ export function LocationGate({ filtersParam, precinctOnlyParam }: LocationGatePr
         if (cancelled) return;
         const stillEnabled = options.find((option) => option.id === remembered.id);
         if (stillEnabled) {
-          router.replace(targetHref(stillEnabled, stillEnabled.lat, stillEnabled.lng, filtersParam, precinctOnlyParam));
+          router.replace(
+            targetHref(stillEnabled, stillEnabled.lat, stillEnabled.lng, filtersParam, precinctOnlyParam, openNowParam),
+          );
           return;
         }
         forgetRememberedPrecinct();
@@ -163,7 +178,7 @@ export function LocationGate({ filtersParam, precinctOnlyParam }: LocationGatePr
     // Picking a precinct here only seeds the ranking origin (lat/lng) — it
     // never turns on the "this suburb only" restriction on its own; that's
     // an explicit, separate opt-in via the feed's filter chip.
-    router.replace(targetHref(precinct, precinct.lat, precinct.lng, filtersParam, precinctOnlyParam));
+    router.replace(targetHref(precinct, precinct.lat, precinct.lng, filtersParam, precinctOnlyParam, openNowParam));
   }
 
   if (state === "picker") return <PrecinctPicker precincts={precincts} loading={precinctsLoading} onSelect={handleSelect} />;
