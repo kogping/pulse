@@ -262,11 +262,15 @@ function combineFilterConditions(filters: readonly IntentFilterId[]) {
 // Candidate-venues CTE body, shared by every query in this file that needs
 // "venues within radiusMeters of (lat, lng)" — the ranking query,
 // countVenuesPerFilter, and getClosingSoonVenues — so they never drift on
-// what the candidate pool means. No longer filtered by precinct — venues
+// what the candidate pool means. Not filtered by precinct by default — venues
 // city-wide within radiusMeters are all candidates, ranked by distance (see
-// FEED_SCORING_WEIGHTS) rather than gated to a single hardcoded precinct.
-function candidateVenuesCte(params: { lat: number; lng: number; radiusMeters: number }) {
-  const { lat, lng, radiusMeters } = params;
+// FEED_SCORING_WEIGHTS). `precinctFilter`, when given, is a genuine visitor
+// opt-in ("this suburb only") layered on top of that default — distinct from
+// (lat, lng), which is just the ranking origin (geolocation or a picked
+// precinct's hub centroid) and never restricts the candidate pool on its own.
+function candidateVenuesCte(params: { lat: number; lng: number; radiusMeters: number; precinctFilter?: string }) {
+  const { lat, lng, radiusMeters, precinctFilter } = params;
+  const precinctCondition = precinctFilter ? drizzleSql`AND v.precinct = ${precinctFilter}` : drizzleSql``;
   return drizzleSql`
     candidate_venues AS (
       SELECT
@@ -283,6 +287,7 @@ function candidateVenuesCte(params: { lat: number; lng: number; radiusMeters: nu
         ST_Distance(v.location, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography) AS distance_m
       FROM venues v
       WHERE ST_DWithin(v.location, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography, ${radiusMeters})
+      ${precinctCondition}
     )
   `;
 }
@@ -305,9 +310,9 @@ function openVenuesCte(cteName: string, now: Date, bufferMinutes: number) {
   `;
 }
 
-function candidateAndOpenNowCte(params: { lat: number; lng: number; radiusMeters: number; now: Date }) {
-  const { lat, lng, radiusMeters, now } = params;
-  return drizzleSql`${candidateVenuesCte({ lat, lng, radiusMeters })}, ${openVenuesCte("open_now", now, FEED_CLOSING_BUFFER_MINUTES)}`;
+function candidateAndOpenNowCte(params: { lat: number; lng: number; radiusMeters: number; now: Date; precinctFilter?: string }) {
+  const { lat, lng, radiusMeters, now, precinctFilter } = params;
+  return drizzleSql`${candidateVenuesCte({ lat, lng, radiusMeters, precinctFilter })}, ${openVenuesCte("open_now", now, FEED_CLOSING_BUFFER_MINUTES)}`;
 }
 
 // Renders the FEED_SCORING_WEIGHTS constant into the ORDER BY expression,
@@ -340,13 +345,21 @@ function scoreSqlExpression(includeOpenPenalty: boolean) {
 }
 
 export interface GetFeedVenuesParams {
-  /** No longer used to filter candidates (feed is city-wide) — kept only as
-   *  a cache-key namespace input for feed-cache.ts callers mid-migration. */
+  /** Display label only — not used to filter candidates. Kept as a
+   *  cache-key namespace input for feed-cache.ts. See `precinctFilter` for
+   *  the actual opt-in "this suburb only" restriction. */
   precinct?: string;
   lat: number;
   lng: number;
   /** Search radius in metres. Defaults to 2000 (a comfortable walking radius). */
   radiusMeters?: number;
+  /** Opt-in restriction to venues in this exact precinct (v.precinct match).
+   *  Omitted (the default) means city-wide: every venue within radiusMeters
+   *  of (lat, lng) is a candidate regardless of precinct. Distinct from
+   *  `precinct`/`lat`/`lng`, which only set the ranking origin — picking a
+   *  precinct as a starting point should never silently exclude venues
+   *  elsewhere in the city unless the visitor explicitly asked for that. */
+  precinctFilter?: string;
   limit?: number;
   now?: Date;
   /** F1.6 intent filters, AND-composed. open_now is never included here —
@@ -378,15 +391,16 @@ interface FeedCandidateRow extends Record<string, unknown> {
 }
 
 // Shared query body for the feed ranking pipeline (F1.1-F1.4): venues within
-// `radiusMeters` of (lat, lng) in `precinct`, filtered to those open right
-// now and not closing within FEED_CLOSING_BUFFER_MINUTES, ranked by
+// `radiusMeters` of (lat, lng), optionally restricted to `precinctFilter`,
+// filtered to those open right now and not closing within
+// FEED_CLOSING_BUFFER_MINUTES, ranked by
 // FEED_SCORING_WEIGHTS, capped at `limit`. Returns raw coordinates alongside
 // each row — getFeedVenues (below) discards them to keep its public return
 // type provenance-only; getFeedVenuesWithLocation (feed-cache.ts's source of
 // truth) keeps them, since the cache's post-read exact-distance sort needs
 // real venue coordinates that the public VenueCardData shape doesn't carry.
 async function runFeedRankingQuery(params: GetFeedVenuesParams): Promise<FeedCandidateRow[]> {
-  const { lat, lng, radiusMeters = 2000, limit = 10, now = new Date(), filters = [], openNowOnly = true } = params;
+  const { lat, lng, radiusMeters = 2000, limit = 10, now = new Date(), filters = [], openNowOnly = true, precinctFilter } = params;
 
   // openNowOnly:true keeps the exact original INNER JOIN — every candidate
   // is guaranteed open, no penalty term needed. openNowOnly:false LEFT JOINs
@@ -399,7 +413,7 @@ async function runFeedRankingQuery(params: GetFeedVenuesParams): Promise<FeedCan
   const isOpenNowColumn = openNowOnly ? drizzleSql`true AS is_open_now` : drizzleSql`(open_now.id IS NOT NULL) AS is_open_now`;
 
   const result = await db.execute<FeedCandidateRow>(drizzleSql`
-    WITH ${candidateAndOpenNowCte({ lat, lng, radiusMeters, now })},
+    WITH ${candidateAndOpenNowCte({ lat, lng, radiusMeters, now, precinctFilter })},
     badge_freshness AS (
       SELECT
         var.venue_id,
@@ -570,6 +584,7 @@ export interface CountVenuesPerFilterParams {
   radiusMeters?: number;
   now?: Date;
   filters: readonly IntentFilterId[];
+  precinctFilter?: string;
 }
 
 // F1.7 rung 3 support: how many venues in the current candidate pool
@@ -581,7 +596,7 @@ export interface CountVenuesPerFilterParams {
 export async function countVenuesPerFilter(
   params: CountVenuesPerFilterParams,
 ): Promise<Partial<Record<IntentFilterId, number>>> {
-  const { lat, lng, radiusMeters = 2000, now = new Date(), filters } = params;
+  const { lat, lng, radiusMeters = 2000, now = new Date(), filters, precinctFilter } = params;
   const droppable = filters.filter((id) => INTENT_FILTER_REGISTRY_BY_ID.get(id)?.droppable);
   if (droppable.length === 0) return {};
 
@@ -593,7 +608,7 @@ export async function countVenuesPerFilter(
   );
 
   const result = await db.execute<Record<string, number>>(drizzleSql`
-    WITH ${candidateAndOpenNowCte({ lat, lng, radiusMeters, now })}
+    WITH ${candidateAndOpenNowCte({ lat, lng, radiusMeters, now, precinctFilter })}
     SELECT ${drizzleSql.join(countExprs, drizzleSql`, `)}
     FROM candidate_venues cv
     JOIN open_now ON open_now.id = cv.id
@@ -613,10 +628,10 @@ export async function countVenuesPerFilter(
 // explicitly for the labelled "closing soon" section (CLAUDE.md invariant 5
 // and the PRD's 45-minute rule are never relaxed).
 export async function getClosingSoonVenues(params: GetFeedVenuesParams): Promise<FeedVenue[]> {
-  const { lat, lng, radiusMeters = 2000, limit = 10, now = new Date() } = params;
+  const { lat, lng, radiusMeters = 2000, limit = 10, now = new Date(), precinctFilter } = params;
 
   const result = await db.execute<FeedCandidateRow>(drizzleSql`
-    WITH ${candidateVenuesCte({ lat, lng, radiusMeters })},
+    WITH ${candidateVenuesCte({ lat, lng, radiusMeters, precinctFilter })},
     ${openVenuesCte("open_no_buffer", now, 0)},
     ${openVenuesCte("open_with_buffer", now, FEED_CLOSING_BUFFER_MINUTES)},
     closing_soon AS (

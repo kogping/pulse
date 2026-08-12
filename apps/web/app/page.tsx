@@ -124,17 +124,21 @@ function renderVenueList(relaxation: LoadFeedResult, mapEnabled: boolean, openNo
 // client-side state. precinct/lat/lng are deliberately omitted — landing
 // here without them just re-renders LocationGate, which restores them from
 // the remembered precinct (see location/location-gate.tsx) and redirects.
-function feedHref(filters: readonly IntentFilterId[], openNowOnly: boolean): string {
+// `precinctOnly` follows the same convention: it's the opt-in "this suburb
+// only" restriction, separate from precinct/lat/lng (which only seed the
+// ranking origin), so it survives filter/openNow toggles the same way.
+function feedHref(filters: readonly IntentFilterId[], openNowOnly: boolean, precinctOnly: boolean): string {
   const params = new URLSearchParams();
   if (filters.length > 0) params.set("filters", filters.join(","));
   if (!openNowOnly) params.set("openNow", "0");
+  if (precinctOnly) params.set("precinctOnly", "1");
   const qs = params.toString();
   return qs ? `/?${qs}` : "/";
 }
 
-function filterHref(active: readonly IntentFilterId[], toggled: IntentFilterId, openNowOnly: boolean): string {
+function filterHref(active: readonly IntentFilterId[], toggled: IntentFilterId, openNowOnly: boolean, precinctOnly: boolean): string {
   const next = active.includes(toggled) ? active.filter((id) => id !== toggled) : [...active, toggled];
-  return feedHref(next, openNowOnly);
+  return feedHref(next, openNowOnly, precinctOnly);
 }
 
 interface HomeProps {
@@ -156,11 +160,17 @@ export default async function Home({ searchParams }: HomeProps) {
   const lat = typeof params.lat === "string" ? Number(params.lat) : undefined;
   const lng = typeof params.lng === "string" ? Number(params.lng) : undefined;
 
+  // Opt-in "this suburb only" restriction — distinct from precinct/lat/lng
+  // above, which only seed the ranking origin. Defaults off: absent this
+  // param, the feed is always city-wide, whichever precinct got you here.
+  const precinctOnlyParam = typeof params.precinctOnly === "string" ? params.precinctOnly : undefined;
+  const precinctOnly = precinctOnlyParam === "1";
+
   if (!precinct || lat === undefined || lng === undefined || Number.isNaN(lat) || Number.isNaN(lng)) {
     return (
       <main className="mx-auto flex min-h-dvh w-full max-w-[430px] flex-col gap-4 px-4 pb-safe-b pt-safe-t">
         <h1 className="pt-4 text-2xl font-semibold text-ink-50">Pulse — what's good tonight</h1>
-        <LocationGate filtersParam={filtersParam} />
+        <LocationGate filtersParam={filtersParam} precinctOnlyParam={precinctOnlyParam} />
       </main>
     );
   }
@@ -204,28 +214,43 @@ export default async function Home({ searchParams }: HomeProps) {
     now,
     filters: activeFilters,
     openNowOnly,
+    precinctFilter: precinctOnly ? precinct : undefined,
   });
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-[430px] flex-col gap-4 px-4 pb-safe-b pt-safe-t sm:max-w-3xl lg:max-w-5xl">
       <div className="flex items-center justify-between pt-4">
         <h1 className="text-2xl font-semibold text-ink-50">Pulse — what's good tonight</h1>
-        <PrecinctSwitcher currentPrecinctName={precinct} filtersParam={filtersParam} />
+        <PrecinctSwitcher currentPrecinctName={precinct} filtersParam={filtersParam} precinctOnlyParam={precinctOnlyParam} />
       </div>
       <div className="flex gap-2 overflow-x-auto">
+        {/* Distinct from PrecinctSwitcher: that picks *which* suburb seeds
+            the ranking origin, this chip decides whether results are
+            restricted to it at all. Off (the default) always shows every
+            venue city-wide, ranked by distance from that origin. */}
+        <FilterChip
+          label={`${precinct} only`}
+          selected={precinctOnly}
+          href={feedHref(activeFilters, openNowOnly, !precinctOnly)}
+        />
         {visibleFilterDefs.map((def) =>
           def.id === "open_now" ? (
             // F1.8: the one chip that toggles OFF, not off-then-on — every
             // other chip's href adds/removes itself from the AND-composed
             // `filters` list; this one flips openNowOnly instead, since
             // it's enforced by the base query, not an attribute filter.
-            <FilterChip key={def.id} label={def.label} selected={openNowOnly} href={feedHref(activeFilters, !openNowOnly)} />
+            <FilterChip
+              key={def.id}
+              label={def.label}
+              selected={openNowOnly}
+              href={feedHref(activeFilters, !openNowOnly, precinctOnly)}
+            />
           ) : (
             <FilterChip
               key={def.id}
               label={def.label}
               selected={activeFilters.includes(def.id)}
-              href={filterHref(activeFilters, def.id, openNowOnly)}
+              href={filterHref(activeFilters, def.id, openNowOnly, precinctOnly)}
             />
           ),
         )}

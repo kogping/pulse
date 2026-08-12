@@ -53,6 +53,12 @@ export async function GET(request: NextRequest) {
   // F1.8: mirrors page.tsx's parsing — only an explicit "0" turns it off.
   const openNowOnly = params.get("openNow") !== "0";
 
+  // Opt-in "this suburb only" restriction — mirrors page.tsx's parsing.
+  // Absent/anything but "1" means city-wide (the default): picking a
+  // precinct only seeds lat/lng as the ranking origin, it never restricts
+  // candidates on its own.
+  const precinctOnly = params.get("precinctOnly") === "1";
+
   const relaxation = await loadFeed(
     {
       precinct,
@@ -62,6 +68,7 @@ export async function GET(request: NextRequest) {
       now,
       filters,
       openNowOnly,
+      precinctFilter: precinctOnly ? precinct : undefined,
     },
     {
       logger: {
