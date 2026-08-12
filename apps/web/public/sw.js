@@ -34,16 +34,23 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // Network-first, cache as offline fallback only — not cache-first. "/"
+  // is dynamic (feed content, freshness badges, whatever query params the
+  // visitor landed with) and SHELL_CACHE's name never changes across
+  // deploys, so a cache-first "/" would serve whatever HTML happened to be
+  // cached the first time this service worker installed, forever, on every
+  // subsequent visit regardless of how many times the app is redeployed.
+  // Falling back to cache only once the network fetch actually fails keeps
+  // the PWA's offline affordance without that staleness trap.
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request).then((response) => {
+    fetch(event.request)
+      .then((response) => {
         if (response.ok) {
           const responseClone = response.clone();
           caches.open(SHELL_CACHE).then((cache) => cache.put(event.request, responseClone));
         }
         return response;
-      });
-    }),
+      })
+      .catch(() => caches.match(event.request)),
   );
 });
