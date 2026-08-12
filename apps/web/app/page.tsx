@@ -257,7 +257,7 @@ export default async function Home({ searchParams }: HomeProps) {
       </div>
 
       {relaxation.disclosure ? (
-        <p className="rounded-lg bg-ink-700 px-4 py-2 text-sm text-ink-100">{relaxation.disclosure}</p>
+        <p className="bg-ink-700 px-4 py-2 text-sm text-ink-100">{relaxation.disclosure}</p>
       ) : null}
 
       {relaxation.venues.length > 0 ? (

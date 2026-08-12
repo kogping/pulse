@@ -48,7 +48,7 @@ export function DirectionsLink({ name, lat, lng }: DirectionsLinkProps) {
       rel="noopener noreferrer"
       data-testid="directions-link"
       onClick={() => track("directions_tapped")}
-      className="min-h-touch inline-flex items-center justify-center rounded-full bg-accent-subtle px-4 text-sm font-medium text-ink-950"
+      className="min-h-touch inline-flex items-center justify-center bg-accent-subtle px-4 text-sm font-medium text-ink-950"
     >
       Directions
     </a>

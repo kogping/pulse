@@ -420,7 +420,12 @@ interface FeedCandidateRow extends Record<string, unknown> {
 // truth) keeps them, since the cache's post-read exact-distance sort needs
 // real venue coordinates that the public VenueCardData shape doesn't carry.
 async function runFeedRankingQuery(params: GetFeedVenuesParams): Promise<FeedCandidateRow[]> {
-  const { lat, lng, radiusMeters = 2000, limit = 10, now = new Date(), filters = [], openNowOnly = true, precinctOnly } = params;
+  const { lat, lng, radiusMeters = 2000, limit, now = new Date(), filters = [], openNowOnly = true, precinctOnly } = params;
+
+  // No `limit` means no cap — every candidate within radiusMeters is
+  // returned, ranked. Postgres omits LIMIT entirely rather than being
+  // handed a sentinel "unlimited" number.
+  const limitClause = limit !== undefined ? drizzleSql`LIMIT ${limit}` : drizzleSql``;
 
   // openNowOnly:true keeps the exact original INNER JOIN — every candidate
   // is guaranteed open, no penalty term needed. openNowOnly:false LEFT JOINs
@@ -475,7 +480,7 @@ async function runFeedRankingQuery(params: GetFeedVenuesParams): Promise<FeedCan
       ST_Y(location::geometry) AS lat, ST_X(location::geometry) AS lng
     FROM scored
     ORDER BY ${scoreSqlExpression(!openNowOnly)} DESC
-    LIMIT ${limit}
+    ${limitClause}
   `);
 
   return result.rows;
@@ -648,7 +653,8 @@ export async function countVenuesPerFilter(
 // explicitly for the labelled "closing soon" section (CLAUDE.md invariant 5
 // and the PRD's 45-minute rule are never relaxed).
 export async function getClosingSoonVenues(params: GetFeedVenuesParams): Promise<FeedVenue[]> {
-  const { lat, lng, radiusMeters = 2000, limit = 10, now = new Date(), precinctOnly } = params;
+  const { lat, lng, radiusMeters = 2000, limit, now = new Date(), precinctOnly } = params;
+  const limitClause = limit !== undefined ? drizzleSql`LIMIT ${limit}` : drizzleSql``;
 
   const result = await db.execute<FeedCandidateRow>(drizzleSql`
     WITH ${candidateVenuesCte({ lat, lng, radiusMeters, precinctOnly })},
@@ -667,7 +673,7 @@ export async function getClosingSoonVenues(params: GetFeedVenuesParams): Promise
     FROM candidate_venues cv
     JOIN closing_soon cs ON cs.id = cv.id
     ORDER BY cv.distance_m ASC
-    LIMIT ${limit}
+    ${limitClause}
   `);
 
   if (result.rows.length === 0) return [];

@@ -38,7 +38,7 @@ function buildPinTooltip(pin: VenueMapPin): HTMLElement {
     const img = document.createElement("img");
     img.src = pin.photo.src;
     img.alt = pin.name;
-    img.className = "h-24 w-full rounded object-cover";
+    img.className = "h-24 w-full object-cover";
     root.appendChild(img);
   }
 
@@ -132,12 +132,12 @@ export function VenueMap({ pins }: VenueMapProps) {
       <div
         role="status"
         data-testid="venue-map-unavailable"
-        className="flex min-h-[320px] items-center justify-center rounded-lg bg-ink-700 text-sm text-ink-100"
+        className="flex min-h-[320px] items-center justify-center bg-ink-700 text-sm text-ink-100"
       >
         Map unavailable
       </div>
     );
   }
 
-  return <div ref={containerRef} data-testid="venue-map" className="h-[320px] w-full rounded-lg" />;
+  return <div ref={containerRef} data-testid="venue-map" className="h-[320px] w-full" />;
 }

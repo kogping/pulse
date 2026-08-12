@@ -43,14 +43,14 @@ export function FlagControl({ venueId, attributeKey }: FlagControlProps) {
   }
 
   return (
-    <div className="flex flex-col gap-2 rounded-md border border-ink-700 p-3" data-testid="flag-sheet">
+    <div className="flex flex-col gap-2 border border-ink-700 p-3" data-testid="flag-sheet">
       <label className="text-xs text-ink-300" htmlFor={`flag-reason-${attributeKey}`}>
         What's wrong? (optional)
       </label>
       <textarea
         id={`flag-reason-${attributeKey}`}
         data-testid="flag-reason"
-        className="rounded border border-ink-700 bg-transparent p-2 text-sm text-ink-100"
+        className="border border-ink-700 bg-transparent p-2 text-sm text-ink-100"
         value={reason}
         onChange={(event) => setReason(event.target.value)}
         rows={2}

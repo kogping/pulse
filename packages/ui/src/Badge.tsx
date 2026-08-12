@@ -32,7 +32,7 @@ function formatLastVerified(date: Date): string {
 // to render a bare, unprovenanced value (see CLAUDE.md invariant #3).
 export function Badge({ label, attribute }: BadgeProps) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full bg-ink-900 px-2.5 py-1 text-sm">
+    <span className="inline-flex items-center gap-1.5 bg-ink-900 px-2.5 py-1 text-sm">
       <span aria-hidden className={`h-2 w-2 rounded-full ${DOT_CLASS[attribute.confidence]}`} />
       {attribute.confidence === "unconfirmed" ? (
         <span className="text-ink-100">{label}: unconfirmed</span>

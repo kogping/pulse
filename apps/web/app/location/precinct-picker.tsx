@@ -26,7 +26,7 @@ export function PrecinctPicker({ precincts, loading, onSelect }: PrecinctPickerP
               key={precinct.id}
               type="button"
               onClick={() => onSelect(precinct)}
-              className="min-h-touch rounded-lg bg-ink-700 px-4 py-3 text-left text-base font-medium text-ink-50"
+              className="min-h-touch bg-ink-700 px-4 py-3 text-left text-base font-medium text-ink-50"
             >
               {precinct.name}
             </button>
