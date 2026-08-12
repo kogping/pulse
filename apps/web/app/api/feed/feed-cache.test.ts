@@ -13,6 +13,7 @@ function venue(id: string): FeedVenue {
     source: "curator",
     attributes: [],
     photo: { kind: "none" },
+    curatorPitch: null,
     availability: { status: "open", closesAt: "23:00", spansMidnight: false },
   };
 }
@@ -165,6 +166,7 @@ describe("feed cache", () => {
         { key: "dress_code", confidence: "unconfirmed" },
       ],
       photo: { kind: "none" },
+      curatorPitch: null,
       availability: { status: "open", closesAt: "23:00", spansMidnight: false },
     };
     const fetchVenues = fetchVenuesReturning([{ venue: venueWithBadge, lat: -33.88, lng: 151.2 }]);

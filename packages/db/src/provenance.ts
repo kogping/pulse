@@ -128,6 +128,10 @@ export interface VenueCardData {
   source: VenueSource;
   attributes: AttributeView[];
   photo: VenuePhoto;
+  /** Curator-authored blurb, null for unverified google_places venues — the
+   *  same field venue-detail.ts surfaces, now also carried on feed rows so
+   *  the map hover tooltip (F1.5) has a description without a second fetch. */
+  curatorPitch: string | null;
 }
 
 // Pure grouping/mapping step, no I/O. Scopes attributeRows to this venue
@@ -145,6 +149,7 @@ export function buildVenueCard(
     photoUrl?: string | null;
     photoRef?: string | null;
     photoAttribution?: string | null;
+    curatorPitch?: string | null;
   },
   attributeRows: AttributeViewRow[],
   now: Date,
@@ -156,6 +161,7 @@ export function buildVenueCard(
     source: venue.source,
     attributes: attributeRows.filter((row) => row.venueId === venue.id).map((row) => buildAttributeView(row, now)),
     photo: buildVenuePhoto(venue),
+    curatorPitch: venue.curatorPitch ?? null,
   };
 }
 
@@ -201,6 +207,7 @@ export async function getVenueForCard(venueId: string): Promise<VenueCardData | 
       photoUrl: venues.photoUrl,
       photoRef: venues.photoRef,
       photoAttribution: venues.photoAttribution,
+      curatorPitch: venues.curatorPitch,
     })
     .from(venues)
     .where(eq(venues.id, venueId))
